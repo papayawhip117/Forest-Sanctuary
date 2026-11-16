@@ -12,10 +12,10 @@ services:
     name: forest-sanctuary
     runtime: node
 
-    # The cheapest PAID instance (about $7/month). The free plan can't keep a
-    # persistent disk, and without one the SQLite file (users, invites,
-    # sessions) is wiped on every deploy and restart. See the README.
-    plan: 0.5c-512mb
+    # Render's free plan: $0, no disk. It goes to sleep after 15 minutes
+    # with no visitors and takes about a minute to wake up. Nothing is lost
+    # when it sleeps, because the data lives in Turso, not on this server.
+    plan: free
 
     # `npm ci` installs exactly what package-lock.json lists. --omit=dev
     # skips nodemon, which only matters on your laptop.
@@ -25,22 +25,10 @@ services:
     # Render calls this URL to check the app is alive (see server.js).
     healthCheckPath: /healthz
 
-    # The persistent disk. Only files under mountPath survive deploys and
-    # restarts; the rest of the server's filesystem is thrown away each time.
-    # 1 GB is plenty for a site like this (about $0.25/month).
-    disk:
-      name: forest-data
-      mountPath: /var/data
-      sizeGB: 1
-
     envVars:
       # Turns on secure cookies, trust proxy and the SESSION_SECRET check.
       - key: NODE_ENV
         value: production
-
-      # Put the database on the persistent disk.
-      - key: DATABASE_PATH
-        value: /var/data/forest.db
 
       # Render makes a random secret once and keeps it. You never need to
       # see it. (Changing it later logs everyone out.)
@@ -48,10 +36,14 @@ services:
         generateValue: true
 
       # How many proxies sit in front of the app. Check /admin/connection
-      # after deploying, and change this in the dashboard if your IP is wrong.
+      # after deploying, and change this here if your IP is wrong.
       - key: TRUST_PROXY
         value: "1"
 
-      # No APP_URL needed: Render sets RENDER_EXTERNAL_URL (your
-      # https://....onrender.com address) by itself, and `npm run invite`
-      # uses it. Set APP_URL only if you add a custom domain later.
+      # Your Turso database. `sync: false` means these are NOT written in
+      # this file (it's public on GitHub!). Render asks you to paste them in
+      # when you create the Blueprint.
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_AUTH_TOKEN
+        sync: false

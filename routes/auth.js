@@ -61,10 +61,10 @@ const signupLimiter = rateLimit({
 // This page used to be a static file (public/signup.html). It's built here now
 // because it needs the code from the link, and only the server can check
 // whether that code is any good before showing the form.
-router.get('/signup', (req, res) => {
+router.get('/signup', async (req, res) => {
   const code = String(req.query.code ?? '');
 
-  if (!isInviteUsable(code)) {
+  if (!(await isInviteUsable(code))) {
     return res.status(403).send(
       layout(
         'Invite only',
@@ -99,7 +99,7 @@ router.post('/signup', signupLimiter, async (req, res) => {
   // --- Check the invite first ----------------------------------------------
   // This is cheap, so do it before the slow password hashing. No valid invite,
   // no account, whatever else was sent.
-  if (!isInviteUsable(code)) {
+  if (!(await isInviteUsable(code))) {
     return res
       .status(403)
       .send(page('Sign up', 'That invite is wrong, already used, or expired.', '/'));
@@ -136,12 +136,17 @@ router.post('/signup', signupLimiter, async (req, res) => {
   // transaction, so they either both happen or neither does.
   let userId;
   try {
-    userId = signUpWithInvite(code, username, passwordHash);
+    userId = await signUpWithInvite(code, username, passwordHash);
   } catch (err) {
     // The UNIQUE rule on the username column makes SQLite throw this error
     // when the name is taken. Any other error is unexpected, so re-throw it.
     // (Express 5 catches errors thrown in async routes and shows a 500 page.)
-    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    // We check the message as well as the code because a local file and a
+    // remote Turso database report the error slightly differently.
+    const isDuplicate =
+      err.extendedCode === 'SQLITE_CONSTRAINT_UNIQUE' ||
+      /UNIQUE constraint failed: users\.username/.test(err.message);
+    if (isDuplicate) {
       return res
         .status(409)
         .send(page('Sign up', 'That username is already taken.', backToForm));
@@ -170,7 +175,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   const password = String(req.body.password ?? '');
 
   // Look the user up. `user` is undefined if nobody has that name.
-  const user = findUserByUsername(username);
+  const user = await findUserByUsername(username);
 
   // bcrypt.compare() reads the salt and cost out of the stored hash, hashes
   // the password that was just typed the same way, and checks if they match.
@@ -241,13 +246,13 @@ function requireLogin(req, res, next) {
 // -----------------------------------------------------------------------------
 // requireLogin runs first. Only if it calls next() does this handler run, so
 // in here we know someone is logged in.
-router.get('/sanctuary', requireLogin, (req, res) => {
+router.get('/sanctuary', requireLogin, async (req, res) => {
   const name = escapeHtml(req.session.username);
 
   // Admins get a link to the invite page. We look the user up in the database
   // instead of trusting something saved in the session, so if you ever remove
   // someone's admin flag it takes effect right away.
-  const user = findUserById(req.session.userId);
+  const user = await findUserById(req.session.userId);
   const adminLink = user && user.is_admin
     ? '    <p>You are an admin: <a href="/admin/invites">create invite links</a>.</p>\n'
     : '';

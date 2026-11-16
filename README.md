@@ -11,7 +11,7 @@ Aesthetic forest themed login page+project for learning authentication, database
 
 ## Running it
 
-You need [Node.js](https://nodejs.org) 20 or newer.
+You need [Node.js](https://nodejs.org) 22 or newer (`npm run invite:prod` uses Node's `--env-file` option).
 
 ```bash
 npm install            # download the libraries listed in package.json
@@ -33,7 +33,7 @@ npm run invite
 
 It prints a link like `http://localhost:3000/signup?code=c_iNS_hvXIRK...`. Open it, make your account, and log in. Because yours is the first account, it is the **admin**. You land on **The Sanctuary** (`/sanctuary`), a page only logged-in members can see, with a link to **`/admin/invites`**, where you can make invite links for friends with one click. Visit the home page and come back, or restart the server: you are still logged in. The **Log out** button ends the session.
 
-Already have a database from step 1 or 2? It keeps working: on start-up the server adds the new `is_admin` column and makes your oldest account the admin.
+Already have a database from an earlier step? It keeps working: on start-up the server adds the `is_admin` column if it's missing and makes your oldest account the admin. An older `.env` that sets `DATABASE_PATH` instead of `DATABASE_URL` works too.
 
 To look inside the database while you learn, the [SQLite CLI](https://sqlite.org/cli.html) works well:
 
@@ -53,16 +53,16 @@ To start over, stop the server and delete the `data/` folder.
 ## How the pieces fit together
 
 ```
-Browser                         Server (Node + Express)                 Disk
-───────                         ───────────────────────                 ────
+Browser                         Server (Node + Express)                 Database
+───────                         ───────────────────────                 ────────
 /signup?code=...    ──POST /signup──▶  rate limit (rate-limit.js)
                                         ├─ check invite code ◀───────  invites table
                                         ├─ validate input
                                         ├─ bcrypt.hash(password)
-                                        └─ create user + use up invite ▶  data/forest.db
+                                        └─ create user + use up invite ▶  users + invites
                                            (one transaction)
 public/login.html   ──POST /login───▶  rate limit (rate-limit.js)
-                                        ├─ db.findUserByUsername() ◀──  data/forest.db
+                                        ├─ db.findUserByUsername() ◀──  users table
                                         ├─ bcrypt.compare(password, hash)
                                         └─ start a session ──────────▶  sessions table
                     ◀── cookie: forest.sid=<random id> ──
@@ -75,17 +75,17 @@ any page            ── cookie: forest.sid ──▶  express-session
 | File | What it does |
 | --- | --- |
 | `server.js` | Starting point. Loads `.env`, creates the Express app, plugs in middleware and routes, starts listening, and shuts down cleanly. Also has the `/healthz` health check. |
-| `db.js` | Opens the SQLite database, creates the `users` table (adding `is_admin` to older databases), and exposes `createUser`, `findUserByUsername` and `findUserById`. |
-| `session-store.js` | Creates the `sessions` table and teaches express-session how to read and write it. |
-| `invites.js` | Creates the `invites` table. Makes codes, checks them, and signs someone up while using up their invite. |
+| `db.js` | Connects to the database (a local SQLite file, or Turso in production), creates all the tables, and exposes `createUser`, `findUserByUsername` and `findUserById`. |
+| `session-store.js` | Teaches express-session how to read and write the `sessions` table. |
+| `invites.js` | Makes invite codes, checks them, and signs someone up while using up their invite. |
 | `rate-limit.js` | A small middleware that limits how often one IP address can try something. |
 | `routes/auth.js` | The sign-up form (`GET /signup`), `POST /signup`, `POST /login`, `POST /logout`, the `requireLogin` guard, and the members-only `GET /sanctuary` page. |
 | `routes/admin.js` | The admin-only invite page, `/admin/invites`, the `/admin/connection` deployment check, and their `requireAdmin` guard. |
 | `html.js` | Small helpers that build HTML pages, and `escapeHtml`. |
-| `scripts/create-invite.js` | `npm run invite`: makes an invite from the command line. |
+| `scripts/create-invite.js` | `npm run invite` / `npm run invite:prod`: makes an invite from the command line. |
 | `public/` | Plain HTML and CSS sent straight to the browser: the home page and the login form. |
 | `.env.example` | The settings the app expects. Copy it to `.env` (which git ignores). |
-| `render.yaml` | The Render Blueprint: how to build, run and store data for the deployed site. |
+| `render.yaml` | The Render Blueprint: how to build and run the deployed site, and which settings it needs. |
 | `.node-version` | Which Node.js version Render should use (22). |
 
 ### Express
@@ -98,9 +98,13 @@ any page            ── cookie: forest.sid ──▶  express-session
 - `express-session` reads the session cookie and loads `req.session` (more below).
 - `express.static('public')` serves the files in `public/` as they are.
 
-### SQLite and better-sqlite3
+### SQLite, libSQL and Turso
 
-SQLite is a full SQL database stored in one file (`data/forest.db`), with no database server to run. `db.js` creates this table the first time the server starts:
+SQLite is a full SQL database stored in one file (`data/forest.db`), with no database server to run. We talk to it with [`@libsql/client`](https://docs.turso.tech/sdk/ts/reference), which can open that local file *or* connect over the internet to a [Turso](https://turso.tech) database (Turso runs libSQL, an open-source fork of SQLite). Locally we use the file; the deployed site uses Turso, because free hosts throw away files (see [Deploying to Render](#deploying-to-render)). The SQL is identical either way.
+
+Because a query might travel across the internet, every database call returns a **Promise** that we `await`. That's why the routes are `async` functions.
+
+`db.js` creates the tables the first time the server starts (`initDatabase()`). The users table:
 
 ```sql
 CREATE TABLE users (
@@ -113,7 +117,7 @@ CREATE TABLE users (
 
 `UNIQUE` makes the database itself reject a second user with the same name, and `COLLATE NOCASE` treats `Cody` and `cody` as the same name.
 
-All queries use **prepared statements** with `?` placeholders. The values are passed separately from the SQL, so input like `'; DROP TABLE users; --` is just stored as a weird username instead of being run. This prevents *SQL injection*.
+All queries use `?` placeholders, passed as `db.execute({ sql, args })`. The values are passed separately from the SQL, so input like `'; DROP TABLE users; --` is just stored as a weird username instead of being run. This prevents *SQL injection*.
 
 ### Password hashing with bcrypt
 
@@ -229,7 +233,7 @@ The downside: the server can't show you an old link again, because it never kept
 
 ### Using a code exactly once: transactions
 
-A sign-up has to do two things: create the user, and mark the invite as used by them. If only one happened, we'd have either an account with a still-valid invite (reusable!) or a used-up invite with no account. So `signUpWithInvite()` wraps both in a **transaction** with `db.transaction()`: either everything inside it happens, or, if anything throws (like the username being taken), SQLite undoes all of it. That's also why trying a taken username doesn't burn your invite.
+A sign-up has to do two things: create the user, and mark the invite as used by them. If only one happened, we'd have either an account with a still-valid invite (reusable!) or a used-up invite with no account. So `signUpWithInvite()` wraps both in a **transaction** with `db.transaction('write')`: either everything inside it is committed, or, if anything throws (like the username being taken), it's rolled back and the database undoes all of it. The slow bcrypt hashing happens *before* the transaction starts, so the database is locked for as short a time as possible. That's also why trying a taken username doesn't burn your invite.
 
 The "mark as used" query is `UPDATE invites SET used_by = ? WHERE id = ? AND used_by IS NULL`. If the invite was somehow used a moment earlier, it changes 0 rows, the code throws, and the transaction rolls back.
 
@@ -237,7 +241,7 @@ The "mark as used" query is `UPDATE invites SET used_by = ? WHERE id = ? AND use
 
 There's a chicken-and-egg problem: you need an invite to make an account, and an account to make invites. Two pieces solve it:
 
-1. **`npm run invite`** makes an invite straight from the command line. Anyone who can run commands on the server could open the database anyway, so that's trusted.
+1. **`npm run invite`** makes an invite straight from the command line (`npm run invite:prod` for the deployed site). Anyone holding the database credentials could edit the tables directly anyway, so that's trusted.
 2. **The first account becomes the admin** (`is_admin = 1` in `users`). Admins see a link on the Sanctuary to `/admin/invites`, which has a **Create invite link** button and a table of every invite: waiting, used (and by whom), or expired.
 
 The admin page is guarded by two middlewares in a row: `requireLogin` ("who are you?", called *authentication*) and then `requireAdmin` ("are you allowed?", called *authorization*). The admin check reads `is_admin` from the database on each request rather than saving it in the session, so taking someone's admin away works immediately.
@@ -261,7 +265,25 @@ Things to know:
 
 ## Deploying to Render
 
-So far the site only runs on your laptop at `http://localhost:3000`. Deploying puts it on a server with a public `https://` address, so friends and family can sign up and log in from their own phones and computers. We use [Render](https://render.com), which builds the app straight from this GitHub repo.
+So far the site only runs on your laptop at `http://localhost:3000`. Deploying puts it on a server with a public `https://` address, so friends and family can sign up and log in from their own phones and computers. The whole setup costs **$0** and needs no credit card:
+
+- **[Render](https://render.com)** (free web service) runs the Node app, building it straight from this GitHub repo.
+- **[Turso](https://turso.tech)** (free plan) holds the database.
+
+### Why two services?
+
+Our whole database used to be one file on the server's disk. On your laptop that's fine. But Render's free plan has a **throwaway filesystem**: every deploy, every restart and every time the app goes to sleep, the server starts again from a fresh copy of your code, and any file the app wrote is gone. With a database file, every account, invite and session would vanish each time.
+
+So in production the data lives somewhere else: a Turso database. Turso runs **libSQL**, an open-source fork of SQLite, on its own servers. It speaks the same SQL as the local file, so the code barely changed: `db.js` connects to a local file when `DATABASE_URL` starts with `file:`, and to Turso when it starts with `libsql://`. This split, where the app server can be thrown away and the data lives in a separate database, is how most real web apps are built.
+
+### What "free" costs you
+
+- **The site sleeps.** Render puts a free web service to sleep after **15 minutes** without visitors. The next visitor waits **about a minute** while it wakes up (a "cold start"); after that it's fast again. Nothing is lost while it sleeps, because the data is in Turso. If a friend says "it's not loading", tell them to give it a minute.
+- **750 free hours a month** on Render. One always-on service uses at most 744, so a single site fits.
+- **Turso's free plan** allows 100 databases, 5 GB of storage and millions of reads and writes a month. Forest Sanctuary will use a tiny fraction of that.
+- **Render can restart a free service at any time.** Same as sleeping: harmless, the data is in Turso.
+
+If any screen in either dashboard asks for a credit card, you've picked a paid option by mistake: go back and choose the free one.
 
 ### What changes when the app runs on a server
 
@@ -272,77 +294,80 @@ The code reads everything that differs between your laptop and the server from *
 | `PORT` | 3000 (from `.env`) | Set by Render | The port the server listens on. Render picks it and routes your public address to it. |
 | `NODE_ENV` | unset | `production` | Turns on secure cookies and `trust proxy`, and refuses to start without a real `SESSION_SECRET`. |
 | `SESSION_SECRET` | from `.env` | Generated by Render | Signs session cookies. Render makes a random one once and keeps it. |
-| `DATABASE_PATH` | `./data/forest.db` | `/var/data/forest.db` | Where the SQLite file lives. On Render that's the persistent disk (next section). |
+| `DATABASE_URL` | `file:./data/forest.db` | `libsql://….turso.io` | Where the database is: a local file, or your Turso database. |
+| `DATABASE_AUTH_TOKEN` | unset | your Turso token | Turso's password. Without it Turso refuses the connection. |
 | `TRUST_PROXY` | unset | `1` | How many proxies to believe about the visitor's IP. See "Checking the proxy setting". |
-| `RENDER_EXTERNAL_URL` | unset | Set by Render | The site's `https://….onrender.com` address. `npm run invite` uses it to print full links. |
-
-### The one big decision: where the database lives
-
-Our whole database is one file. That's lovely on a laptop, but most hosts treat a server's disk as **throwaway**: every deploy (and every restart) starts from a fresh copy of your code, and any file the app wrote is gone. For us that would mean every account, invite and session vanishes each time you push a change.
-
-There are two ways around it:
-
-1. **A persistent disk.** The host attaches a disk that survives deploys, and we put the SQLite file on it. No code changes; SQLite keeps working exactly as it does locally.
-2. **A hosted database** (like Postgres, or a hosted SQLite service such as Turso). The data lives on someone else's database server. This means rewriting `db.js`, `invites.js` and `session-store.js` for a different library, which is a whole step of its own.
-
-We use **a persistent disk**, because it keeps the code you've already learned and only changes one setting. The catch is cost: Render's **free plan can't have a disk**. (Free services also go to sleep after 15 minutes without visitors and take up to a minute to wake.) So `render.yaml` asks for:
-
-- the cheapest paid instance, **about $7/month**, and
-- a **1 GB disk, about $0.25/month**.
-
-Render bills by the second, so if you delete the service after a while you only pay for the time it existed. Check [render.com/pricing](https://render.com/pricing) for current prices before you start.
-
-Two side effects of having a disk, both fine for us:
-
-- **A few seconds of downtime per deploy.** Two copies of the app can't share one disk, so Render stops the old version before starting the new one.
-- **Only files under `/var/data` survive.** Anything the app writes anywhere else is still thrown away. That's why `DATABASE_PATH` points there.
-
-Render also snapshots the disk every day and keeps the snapshots for 7 days, so a mistake is recoverable.
-
-> **Just want to try it for free first?** You can: in `render.yaml` change `plan: 0.5c-512mb` to `plan: free`, delete the whole `disk:` block, and change `DATABASE_PATH` to `./data/forest.db`. Everything works, but all accounts and invites are wiped whenever the app redeploys or restarts, and the Shell (used below to make the first invite) isn't available on the free plan. Treat it as a demo, not somewhere to invite people.
 
 ### What `render.yaml` is
 
 `render.yaml` is a **Blueprint**: the service's settings written as a file in the repo, instead of clicked into a dashboard. It's an example of "infrastructure as code": the setup is versioned with git, reviewed in pull requests, and can be recreated from scratch. Open it; every line is commented. In short it tells Render to:
 
+- use the **free** plan
 - run `npm ci --omit=dev` to install exactly the versions in `package-lock.json`, then `npm start`
 - check `/healthz` to know the app is up (it's in `server.js`)
-- attach the disk at `/var/data`
 - set the environment variables in the table above
+
+The two Turso values are marked `sync: false`, which means they are **not** in the file. This repo is public, and anyone holding your Turso token could read and change your database, so Render asks you to paste them in instead.
 
 `.node-version` tells Render to use Node 22, the same as on your laptop.
 
-### Step by step: your first deploy
+### Step 1: create the Turso database
 
-You'll need a Render account (sign up at [render.com](https://render.com) with GitHub, which makes the next steps easier) and a payment card for the paid instance.
+1. Go to [turso.tech](https://turso.tech) and sign up (signing in with GitHub is easiest). Choose the **Free** plan.
+2. In the Turso dashboard, create a **database**. Call it `forest-sanctuary` and pick the location closest to where you'll run the Render service (for example a US region if you pick Render's Oregon or Ohio). Closer means faster queries.
+3. Open the database and find its **URL**. It looks like `libsql://forest-sanctuary-yourname.turso.io`. Copy it somewhere handy.
+4. Create a **token** for the database (look for "Create Token" or "Generate Token" on the database page). Give it read and write access, and no expiry (or a long one; if it expires, the site stops being able to reach its data). Copy it. **Treat it like a password**: don't commit it or paste it in a chat.
+
+Prefer the terminal? With the [Turso CLI](https://docs.turso.tech/cli) installed (`brew install tursodatabase/tap/turso` on a Mac), the same steps are:
+
+```bash
+turso auth signup                         # or `turso auth login`
+turso db create forest-sanctuary          # make the database
+turso db show forest-sanctuary --url      # print its libsql:// URL
+turso db tokens create forest-sanctuary   # print a token for it
+```
+
+You don't need to create any tables: the app does that itself the first time it connects.
+
+### Step 2: deploy to Render
 
 1. **Merge this pull request**, so `render.yaml` is on the `main` branch.
-2. **Connect GitHub.** In the Render dashboard, click **New +** → **Blueprint**. If Render asks, connect your GitHub account and give it access to the `Forest-Sanctuary` repository.
-3. **Pick the repo.** Choose `papayawhip117/Forest-Sanctuary`, branch `main`. Give the Blueprint a name (anything, such as `forest-sanctuary`).
-4. **Review and apply.** Render reads `render.yaml` and lists what it will create: one web service called `forest-sanctuary` with a disk. Click **Apply** (or **Deploy Blueprint**). Render may ask you to add a payment method here.
-5. **Watch the first deploy.** Open the `forest-sanctuary` service and its **Logs** tab. You'll see `npm ci` install everything, then:
+2. **Sign up** at [render.com](https://render.com) with GitHub.
+3. **New Blueprint.** In the Render dashboard, click **New** → **Blueprint**. If Render asks, connect your GitHub account and give it access to the `Forest-Sanctuary` repository.
+4. **Pick the repo.** Choose `papayawhip117/Forest-Sanctuary`, branch `main`. Give the Blueprint a name (anything, such as `forest-sanctuary`).
+5. **Paste the secrets.** Render reads `render.yaml`, lists one free web service called `forest-sanctuary`, and asks for the two values it doesn't know: paste your Turso URL into `DATABASE_URL` and your token into `DATABASE_AUTH_TOKEN`.
+6. **Apply.** Click **Apply** (or **Deploy Blueprint**).
+7. **Watch the first deploy.** Open the `forest-sanctuary` service and its **Logs** tab. You'll see `npm ci` install everything, then:
 
    ```
    Forest Sanctuary is listening on port 10000 (production)
    ```
 
-   When the status at the top says **Live**, the site is up.
-6. **Find your address.** It's shown near the top of the service page, something like `https://forest-sanctuary.onrender.com` (Render adds a few random characters if the name is taken). Open it: you should see the home page, served over https.
+   If you see `Could not set up the database` instead, the URL or token is wrong: fix them under the service's **Environment** tab, and Render restarts the app.
+8. **Find your address.** When the status says **Live**, the address is near the top of the service page, something like `https://forest-sanctuary.onrender.com` (Render adds a few random characters if the name is taken). Open it: you should see the home page, served over https.
 
-### Step by step: making the first admin invite
+### Step 3: make the first admin invite
 
-The production database starts empty, and sign-up needs an invite: the same chicken and egg as on your laptop, solved the same way, with `npm run invite`. The only difference is that it has to run **on the server**, next to the database on the disk.
+The production database starts empty, and sign-up needs an invite: the same chicken and egg as on your laptop, solved the same way, with the invite script. On a paid server you'd run it in Render's Shell, but the free plan has no Shell. That's fine, because the script doesn't need to run *on* the server: it only needs to reach the **database**. So you run it on your laptop, pointed at Turso.
 
-1. In the `forest-sanctuary` service, open the **Shell** tab. It's a terminal running inside your live server, already in the project folder, with all the environment variables set.
+1. In the project folder on your laptop, create a file called **`.env.production`** with these three lines (your own values):
+
+   ```
+   DATABASE_URL=libsql://forest-sanctuary-yourname.turso.io
+   DATABASE_AUTH_TOKEN=your-turso-token
+   APP_URL=https://forest-sanctuary.onrender.com
+   ```
+
+   `.gitignore` already ignores every `.env.*` file except `.env.example`, so this one will never be committed. (Check with `git status`: it shouldn't be listed.)
 2. Run:
 
-   ```
-   npm run invite
+   ```bash
+   npm run invite:prod
    ```
 
-   It prints a link like `https://forest-sanctuary.onrender.com/signup?code=…`.
+   This is `npm run invite` with `node --env-file=.env.production` in front, which loads those three settings first. It prints a link like `https://forest-sanctuary.onrender.com/signup?code=…`.
 3. Open the link **yourself** and sign up. The first account becomes the admin, so do this before you share anything with anyone else.
-4. Log in. The Sanctuary page now links to **create invite links**; from here on you make invites in the browser, and you won't need the Shell again.
+4. Log in. The Sanctuary page now links to **create invite links**; from here on you make invites in the browser.
 
 If an invite ever reaches the wrong person before you use it, make a new one; it expires after 7 days anyway.
 
@@ -361,14 +386,20 @@ Render doesn't document how many proxy hops it uses, so check it rather than gue
 
 ### Deploying changes later
 
-Every push to `main` deploys automatically: Render pulls the new code, runs the build, and swaps the app over. The database is on the disk, so accounts and invites carry over. Sessions do too, so nobody gets logged out.
+Every push to `main` deploys automatically: Render pulls the new code, runs the build, and swaps the app over. The data is in Turso, so accounts, invites and sessions carry over and nobody gets logged out.
 
 A few other things to know:
 
-- **Logs** tab: everything `console.log` and `console.error` print, live. The first place to look when something breaks.
-- **Environment** tab: where the variables live. Values set in `render.yaml` get reset to what the file says the next time the Blueprint syncs, so change those in the file instead.
+- **Logs** tab on Render: everything `console.log` and `console.error` print, live. The first place to look when something breaks.
+- **Looking inside the production database**: the Turso dashboard has a SQL editor, or use `turso db shell forest-sanctuary`. Try `SELECT id, username, is_admin FROM users;`.
+- **Environment** tab on Render: where the variables live. Values written in `render.yaml` get reset to what the file says when the Blueprint syncs, so change those in the file instead. The two Turso values aren't in the file, so they're edited here.
 - **`SESSION_SECRET`**: never needs touching. Changing it logs everyone out (every existing cookie's signature stops matching).
-- **Shutting down politely**: on each deploy Render sends the old app a `SIGTERM` signal. `server.js` listens for it, finishes the requests in progress and closes the database cleanly before exiting.
+- **Shutting down politely**: when Render stops the app (a deploy, or going to sleep) it sends a `SIGTERM` signal. `server.js` listens for it, finishes the requests in progress and closes the database connection before exiting.
+
+### Other free options we considered
+
+- **Cloudflare Workers + D1** is also free and never sleeps. But Workers aren't a normal Node server: Express, bcrypt and express-session would all need replacing, so it's a rebuild rather than a deployment step. It's a good future project.
+- **Keeping SQLite on the server's disk** needs a persistent disk, which no mainstream host offers for free.
 
 ## What's missing (on purpose)
 

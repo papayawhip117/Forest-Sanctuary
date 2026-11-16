@@ -23,8 +23,8 @@ const router = express.Router();
 // Note the difference between the two answers:
 //   401 / redirect to login  = "we don't know who you are"   (authentication)
 //   403 Forbidden            = "we know who you are, and no" (authorization)
-function requireAdmin(req, res, next) {
-  const user = findUserById(req.session.userId);
+async function requireAdmin(req, res, next) {
+  const user = await findUserById(req.session.userId);
   if (user && user.is_admin) {
     return next();
   }
@@ -39,8 +39,8 @@ router.use('/admin', requireLogin, requireAdmin);
 // -----------------------------------------------------------------------------
 // POST /admin/invites  (the "Create invite link" button)
 // -----------------------------------------------------------------------------
-router.post('/admin/invites', (req, res) => {
-  const code = createInvite(req.session.userId);
+router.post('/admin/invites', async (req, res) => {
+  const code = await createInvite(req.session.userId);
 
   // Build the full link someone can click. req.protocol is "http" or "https",
   // and req.get('host') is whatever is in the address bar, like
@@ -61,7 +61,7 @@ router.post('/admin/invites', (req, res) => {
 // -----------------------------------------------------------------------------
 // GET /admin/invites  (the page itself)
 // -----------------------------------------------------------------------------
-router.get('/admin/invites', (req, res) => {
+router.get('/admin/invites', async (req, res) => {
   // Read the flash message, then remove it so it only shows once.
   const newLink = req.session.newInviteLink;
   delete req.session.newInviteLink;
@@ -77,7 +77,7 @@ router.get('/admin/invites', (req, res) => {
 `
     : '';
 
-  const rows = listInvites()
+  const rows = (await listInvites())
     .map((invite) => {
       let status;
       if (invite.used_by_name) {
