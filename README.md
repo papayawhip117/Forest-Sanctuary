@@ -1,6 +1,6 @@
 # ♡ forest sanctuary ♡
 
-☾ a tiny invite-only hideaway behind an overgrown pixel-art door
+☾ a tiny invite-only “sanctuary"
 
 ✦ built to learn login, databases, cookies, sessions + deployment
 
