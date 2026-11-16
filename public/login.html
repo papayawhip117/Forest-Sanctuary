@@ -4,29 +4,51 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Log in · Forest Sanctuary</title>
+  <!-- A free pixel-style font from Google Fonts. If it can't load, the
+       browser falls back to its normal font and everything still works. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&display=swap">
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
-  <main class="card">
-    <h1>Log in</h1>
+<body class="scene-page">
+  <!-- The mossy wall behind the door. Pure decoration, so screen readers
+       skip it (aria-hidden). public/art/door.js paints it. -->
+  <canvas id="wall-art" class="backdrop" aria-hidden="true"></canvas>
 
-    <!--
-      method="post" sends the fields in the request body (not the URL, where
-      they would show up in browser history and server logs).
-      action="/login" is the route in routes/auth.js that receives them.
-    -->
-    <form method="post" action="/login">
-      <label for="username">Username</label>
-      <input id="username" name="username" required autocomplete="username">
+  <!--
+    The door. Its <canvas> is the picture, and .door-form sits on top of it
+    at fixed percentages (see styles.css), so the form always lands on the
+    planks no matter how big the door is drawn.
+  -->
+  <main class="door">
+    <canvas id="door-art" role="img"
+            aria-label="An old wooden door in a stone arch, overgrown with vines and moss"></canvas>
 
-      <label for="password">Password</label>
-      <input id="password" name="password" type="password" required
-             autocomplete="current-password">
+    <div class="door-form">
+      <h1>Forest Sanctuary</h1>
 
-      <button type="submit">Log in</button>
-    </form>
+      <!--
+        method="post" sends the fields in the request body (not the URL, where
+        they would show up in browser history and server logs).
+        action="/login" is the route in routes/auth.js that receives them.
+      -->
+      <form method="post" action="/login">
+        <label for="username">Username</label>
+        <input id="username" name="username" required autocomplete="username">
 
-    <p>New here? Forest Sanctuary is invite only: ask a member for an invite link.</p>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required
+               autocomplete="current-password">
+
+        <button type="submit">Open the door</button>
+      </form>
+
+      <p class="door-note">Invite only: ask a member for an invite link.</p>
+    </div>
   </main>
+
+  <!-- type="module" lets door.js `import` the helpers in pixel.js. -->
+  <script type="module" src="/art/door.js"></script>
 </body>
 </html>

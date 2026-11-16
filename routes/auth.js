@@ -16,7 +16,7 @@ const bcrypt = require('bcrypt');
 const { findUserByUsername, findUserById } = require('../db');
 const { isInviteUsable, signUpWithInvite } = require('../invites');
 const rateLimit = require('../rate-limit');
-const { layout, page, escapeHtml } = require('../html');
+const { layout, doorLayout, sceneLayout, page, escapeHtml } = require('../html');
 
 const router = express.Router();
 
@@ -257,15 +257,22 @@ router.get('/sanctuary', requireLogin, async (req, res) => {
     ? '    <p>You are an admin: <a href="/admin/invites">create invite links</a>.</p>\n'
     : '';
 
+  // The page is mostly a picture (public/art/sanctuary.js paints it), with a
+  // small panel on top for the greeting and the logout button.
   res.send(
-    layout(
+    sceneLayout(
       'The Sanctuary',
-      `    <p>Welcome in, ${name}. Only logged-in members can see this page.</p>
-    <p>Try opening <a href="/">the home page</a> and coming back: you stay logged in,
-       because your browser sends its session cookie with every request.</p>
+      `    <p>Welcome in, ${name}. The garden is quiet tonight.</p>
 ${adminLink}    <form method="post" action="/logout">
       <button type="submit">Log out</button>
-    </form>`
+    </form>`,
+      {
+        script: '/art/sanctuary.js',
+        canvasId: 'sanctuary-art',
+        description:
+          'A pixel-art garden at night: a stone well with a glowing blue flame, a mossy stone path ' +
+          'leading to a cottage with warm lit windows, flowers, fireflies, and a bunny asleep by the path.',
+      }
     )
   );
 });
@@ -284,8 +291,9 @@ function regenerateSession(req) {
 
 // The sign-up form. The invite code rides along in a hidden <input>, so it is
 // sent with the username and password when the form is submitted.
+// It's drawn on the same wooden door as the login page.
 function signupForm(code) {
-  return layout(
+  return doorLayout(
     'Sign up',
     `    <p>You've been invited. Pick a username and password.</p>
 
@@ -313,7 +321,7 @@ function signupForm(code) {
       <button type="submit">Create account</button>
     </form>
 
-    <p>Already have an account? <a href="/login.html">Log in</a></p>`
+    <p class="door-note">Already have an account? <a href="/login.html">Log in</a></p>`
   );
 }
 
