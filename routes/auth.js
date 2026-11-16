@@ -11,6 +11,7 @@
 // every later request `req.session.userId` tells us who you are.
 // -----------------------------------------------------------------------------
 
+const path = require('path');
 const express = require('express');
 const bcrypt = require('bcrypt');
 const { findUserByUsername, findUserById } = require('../db');
@@ -49,6 +50,22 @@ const signupLimiter = rateLimit({
   max: 10,
   message: (minutes) =>
     page('Sign up', `Too many sign-up attempts. Please wait ${minutes} minute(s) and try again.`, '/'),
+});
+
+// -----------------------------------------------------------------------------
+// GET /  (the front page: the overgrown door)
+// -----------------------------------------------------------------------------
+// The site's main link opens straight onto the door. If you're already logged
+// in (your browser sent a valid session cookie), there's no point knocking
+// again, so you go right into the Sanctuary.
+//
+// The door itself is public/login.html, which is also still reachable at
+// /login.html, so every older "Log in" link keeps working.
+router.get('/', (req, res) => {
+  if (req.session.userId) {
+    return res.redirect('/sanctuary');
+  }
+  res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
 });
 
 // -----------------------------------------------------------------------------

@@ -150,7 +150,7 @@ app.get('/healthz', async (req, res) => {
 
 // Serve every file in /public as-is. So public/login.html is reachable at
 // http://localhost:3000/login.html and public/styles.css at /styles.css.
-// Visiting "/" serves public/index.html automatically.
+// (The front page "/" is a route in routes/auth.js: it shows the door.)
 app.use(express.static(path.join(__dirname, 'public')));
 
 // 4. Routes. Sign-up, login, logout and the members-only page live in
