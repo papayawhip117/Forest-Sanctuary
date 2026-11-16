@@ -1,0 +1,58 @@
+/*
+  Deliberately plain styles for now: just enough to be readable.
+  The forest look and feel is a later step of the project.
+*/
+
+:root {
+  --bg: #1f2b22;      /* deep forest green */
+  --card: #f4f1e8;    /* parchment */
+  --text: #233026;
+  --accent: #3f6b4a;  /* moss */
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+}
+
+.card {
+  width: 100%;
+  max-width: 360px;
+  padding: 24px;
+  background: var(--card);
+  border-radius: 12px;
+}
+
+h1 { margin-top: 0; }
+
+form { display: grid; gap: 8px; }
+
+label { font-weight: 600; margin-top: 8px; }
+
+input {
+  padding: 10px;
+  font: inherit;
+  border: 1px solid #b9b3a3;
+  border-radius: 6px;
+}
+
+button {
+  margin-top: 12px;
+  padding: 10px;
+  font: inherit;
+  color: white;
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+a { color: var(--accent); }

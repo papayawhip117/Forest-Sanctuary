@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign up · Forest Sanctuary</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Sign up</h1>
+
+    <!--
+      method="post" sends the fields in the request body (not the URL, where
+      they would show up in browser history and server logs).
+      action="/signup" is the route in routes/auth.js that receives them.
+      Each input's `name` becomes a key in req.body on the server.
+    -->
+    <form method="post" action="/signup">
+      <label for="username">Username</label>
+      <!-- These checks (required, pattern, minlength) are just for convenience.
+           The server checks again, because anyone can skip the browser. -->
+      <input id="username" name="username" required
+             pattern="[A-Za-z0-9_]{3,30}" autocomplete="username"
+             title="3 to 30 letters, numbers or underscores">
+
+      <label for="password">Password</label>
+      <!-- autocomplete="new-password" tells password managers to suggest one. -->
+      <input id="password" name="password" type="password" required
+             minlength="8" maxlength="72" autocomplete="new-password">
+
+      <button type="submit">Create account</button>
+    </form>
+
+    <p>Already have an account? <a href="/login.html">Log in</a></p>
+  </main>
+</body>
+</html>

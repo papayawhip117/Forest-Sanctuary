@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in · Forest Sanctuary</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Log in</h1>
+
+    <!-- Same idea as signup.html, but posts to /login instead. -->
+    <form method="post" action="/login">
+      <label for="username">Username</label>
+      <input id="username" name="username" required autocomplete="username">
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required
+             autocomplete="current-password">
+
+      <button type="submit">Log in</button>
+    </form>
+
+    <p>New here? <a href="/signup.html">Sign up</a></p>
+  </main>
+</body>
+</html>
