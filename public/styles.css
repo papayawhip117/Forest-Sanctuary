@@ -73,3 +73,192 @@ input.copy { width: 100%; font-family: ui-monospace, monospace; font-size: 0.85e
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.9em; }
 th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid #d6d0c0; }
+
+/* =============================================================================
+   Pixel-art scenes: the login door and the Sanctuary.
+   The pictures are drawn by the scripts in public/art/ onto small canvases.
+   The CSS below stretches those canvases up and keeps the pixels crisp.
+   ========================================================================== */
+
+:root {
+  --pixel-font: 'Pixelify Sans', ui-monospace, monospace;
+  --cream: #f6ecd2;
+  --ink: #1a1230;
+  --brass: #d9a441;
+  --brass-dark: #8a5a1c;
+  --focus: #ffe66d;
+}
+
+/* Any canvas showing pixel art: scale it up WITHOUT blurring. Without this
+   the browser smooths the tiny canvas and the art turns to mush. */
+canvas.backdrop,
+.door canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges; /* older Firefox name for the same idea */
+  display: block;
+}
+
+/* Scene pages fill the screen; the art sits behind everything. */
+body.scene-page {
+  padding: 0;
+  background: #0b0f2a;
+  font-family: var(--pixel-font);
+  overflow: hidden;
+}
+
+/* A dark vignette over the art, so the middle of the screen stands out. */
+body.scene-page::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 60%, transparent 35%, rgba(4, 5, 18, 0.75) 100%);
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+}
+
+/* --- The door --------------------------------------------------------------
+   Its size: as big as fits, keeping the art's 2:3 shape. `container-type`
+   lets the text inside use `cqw` units (1cqw = 1% of the door's width), so
+   the words grow and shrink along with the door. */
+.door {
+  position: relative;
+  z-index: 1;
+  width: min(92vw, 60vh, 520px);
+  aspect-ratio: 2 / 3;
+  container-type: inline-size;
+  align-self: end;
+  margin-bottom: 3vh;
+  filter: drop-shadow(0 0 24px rgba(0, 0, 0, 0.6));
+}
+
+.door canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* The form area, in % of the door, chosen to sit on the planks below the top
+   iron band and above the bottom one. Tweak these if you change the door. */
+.door-form {
+  position: absolute;
+  top: 25%;
+  bottom: 10%;
+  left: 19%;
+  right: 19%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: var(--cream);
+  font-size: clamp(12px, 4.4cqw, 20px);
+  text-shadow: 2px 2px 0 var(--ink);
+  text-align: center;
+}
+
+.door-form h1 {
+  margin: 0 0 0.6em;
+  font-size: 1.45em;
+  font-weight: 600;
+  line-height: 1.1;
+  color: #ffe9a8;
+}
+
+.door-form form { gap: 0.25em; text-align: left; }
+
+.door-form label { margin-top: 0.4em; font-weight: 400; }
+
+/* Text boxes look like little parchment plaques. The stacked box-shadows draw
+   a 2-step pixel border with no rounded corners. */
+.door-form input {
+  width: 100%;
+  padding: 0.45em 0.5em;
+  font: inherit;
+  font-size: max(16px, 1em); /* 16px+ stops iPhones zooming in on focus */
+  color: var(--ink);
+  text-shadow: none;
+  background: var(--cream);
+  border: 0;
+  border-radius: 0;
+  box-shadow: 0 0 0 2px var(--ink), 3px 3px 0 2px rgba(0, 0, 0, 0.45);
+}
+
+/* A brass plate for the button. */
+.door-form button {
+  margin-top: 0.9em;
+  padding: 0.5em;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  text-shadow: 1px 1px 0 #f7d27a;
+  background: var(--brass);
+  border: 0;
+  border-radius: 0;
+  box-shadow: 0 0 0 2px var(--ink), inset -3px -3px 0 var(--brass-dark), inset 3px 3px 0 #f7d27a;
+}
+.door-form button:hover { background: #e8b553; }
+.door-form button:active { box-shadow: 0 0 0 2px var(--ink), inset 3px 3px 0 var(--brass-dark); }
+
+/* Keyboard users need to see where they are. A bright, chunky outline. */
+.door-form input:focus-visible,
+.door-form button:focus-visible,
+.scene-panel a:focus-visible,
+.scene-panel button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.door-note { margin: 1em 0 0; font-size: 0.8em; }
+.door-form p { margin: 0 0 0.6em; }
+.door-form a { color: #ffe9a8; }
+
+/* --- The Sanctuary ---------------------------------------------------------
+   A small floating panel with the welcome text and the logout button. */
+.scene-panel {
+  position: fixed;
+  z-index: 1;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  max-width: 340px;
+  padding: 12px 14px;
+  color: var(--cream);
+  background: rgba(11, 15, 42, 0.78);
+  box-shadow: 0 0 0 3px #2b3470, 0 0 0 5px var(--ink);
+  font-size: 16px;
+  line-height: 1.35;
+}
+.scene-panel h1 { margin: 0 0 6px; font-size: 1.4em; color: #ffe9a8; }
+.scene-panel p { margin: 0 0 8px; }
+.scene-panel a { color: #9fd8ff; }
+.scene-panel form { display: block; }
+.scene-panel button {
+  margin: 4px 0 0;
+  padding: 6px 12px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--brass);
+  border-radius: 0;
+  box-shadow: 0 0 0 2px var(--ink), inset -2px -2px 0 var(--brass-dark);
+}
+
+/* On short screens (a phone turned sideways) keep the panel small, so it
+   doesn't cover the garden. */
+@media (max-height: 500px) {
+  .scene-panel { max-width: 260px; padding: 8px 10px; font-size: 13px; top: 10px; left: 10px; }
+}
+
+/* Words for screen readers only (describes the picture). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

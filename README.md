@@ -6,8 +6,8 @@ Aesthetic forest themed login page+project for learning authentication, database
 1. Sign-up and login with hashed passwords
 2. Sessions and cookies, so the server remembers who is logged in
 3. Invite codes, so only invited people can sign up
-4. **Deployment, so it runs on the internet** ← you are here
-5. The forest look and feel
+4. Deployment, so it runs on the internet
+5. **The forest look and feel: pixel art** ← you are here
 
 ## Running it
 
@@ -83,7 +83,8 @@ any page            ── cookie: forest.sid ──▶  express-session
 | `routes/admin.js` | The admin-only invite page, `/admin/invites`, the `/admin/connection` deployment check, and their `requireAdmin` guard. |
 | `html.js` | Small helpers that build HTML pages, and `escapeHtml`. |
 | `scripts/create-invite.js` | `npm run invite` / `npm run invite:prod`: makes an invite from the command line. |
-| `public/` | Plain HTML and CSS sent straight to the browser: the home page and the login form. |
+| `public/` | Plain HTML and CSS sent straight to the browser: the home page, the login door and the stylesheet. |
+| `public/art/` | The pixel art, drawn by small JavaScript files: `pixel.js` (shared helpers), `door.js` (login and sign-up) and `sanctuary.js` (the garden). See "The pixel art" below. |
 | `.env.example` | The settings the app expects. Copy it to `.env` (which git ignores). |
 | `render.yaml` | The Render Blueprint: how to build and run the deployed site, and which settings it needs. |
 | `.node-version` | Which Node.js version Render should use (22). |
@@ -401,6 +402,43 @@ A few other things to know:
 - **Cloudflare Workers + D1** is also free and never sleeps. But Workers aren't a normal Node server: Express, bcrypt and express-session would all need replacing, so it's a rebuild rather than a deployment step. It's a good future project.
 - **Keeping SQLite on the server's disk** needs a persistent disk, which no mainstream host offers for free.
 
+## The pixel art
+
+There are no image files. Every picture is **drawn by code** onto a tiny `<canvas>`, then CSS stretches it to fill the screen.
+
+### The two tricks
+
+1. **Draw small.** The door is only 72 x 108 pixels. The garden is about 110 pixels across the short side of your screen. All drawing uses whole-number coordinates, so each call colors whole pixels.
+2. **Scale up without blur.** In `styles.css`, `image-rendering: pixelated` tells the browser to blow each pixel up into a crisp square block. Without it, the browser would smooth the tiny canvas into mush.
+
+### The toolkit (`public/art/pixel.js`)
+
+| Helper | What it draws |
+| --- | --- |
+| `rect`, `px`, `ellipse` | Rectangles, single pixels, blocky ovals. |
+| `blob` | A leafy clump (bushes, tree crowns, ivy): lots of small round puffs, each in a dark, mid and light shade, so they look lit from above. |
+| `glow` | Light (the flame, the windows): see-through circles stacked with the `lighter` blend mode, so their colors add up like real light. |
+| `sprite` | A small drawing written as text, one string per row, one letter per pixel. The bunny is drawn this way. |
+| `makeRandom` | A *seeded* random number generator: the same seed gives the same numbers, so the leaves and flowers land in the same places every visit. Change a seed to rearrange them. |
+| `animate` | Calls a drawing function about 12 times a second (a low, retro frame rate). If your device asks for reduced motion, it draws one still frame instead. |
+
+### How a scene is drawn
+
+`sanctuary.js` paints everything that never moves **once**, onto a hidden canvas. Then, 12 times a second, it copies that picture and draws only the moving parts on top: the flickering flame and its sparks, the window glow, the fireflies and the bunny breathing. That's why it's cheap enough for a phone.
+
+The garden adapts to the screen: `layOut()` works out where the ground, well, cottage and path go from the canvas size, so a tall phone gets taller trees and a wide monitor gets a wider garden.
+
+### Tweaking it
+
+- **Colors**: each scene file starts with a palette object `C`. Change a color there and it changes everywhere.
+- **The bunny**: edit the `BUNNY` strings in `sanctuary.js`. `o` is outline, `w` fur, `s` shadow, `p` pink, `e` the closed eye, `t` the tail, and `.` is empty.
+- **Where things are**: `layOut()` in `sanctuary.js`.
+- **The form on the door**: it's normal HTML placed over the door with percentages (`.door-form` in `styles.css`). If you redraw the door, nudge those percentages.
+
+### Accessibility
+
+The forms are ordinary HTML forms with labels, so screen readers, password managers and keyboards work as before. Focused fields get a bright yellow outline. The garden canvas has an `aria-label` describing the picture, and the decorative wall behind the door is hidden from screen readers.
+
 ## What's missing (on purpose)
 
-The forest look and feel is step 5. Until then the pages are plain on purpose, so the auth code is easy to read.
+Only the login, sign-up and Sanctuary pages are pixel art so far. The message pages and the admin page still use the plain card style.
