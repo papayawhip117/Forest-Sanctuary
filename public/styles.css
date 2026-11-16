@@ -1,6 +1,9 @@
 /*
-  Deliberately plain styles for now: just enough to be readable.
-  The forest look and feel is a later step of the project.
+  Two looks live in this file:
+    1. A plain parchment card on dark green (right below). Only the admin
+       pages use it: they're tools, not part of the forest.
+    2. The pixel-art scenes (further down): the door, every message and
+       error page, and the Sanctuary. Everything visitors and members see.
 */
 
 :root {
@@ -204,9 +207,59 @@ body.scene-page::after {
 .door-form button:hover { background: #e8b553; }
 .door-form button:active { box-shadow: 0 0 0 2px var(--ink), inset 3px 3px 0 var(--brass-dark); }
 
+/* Messages (errors, "account created", 404...) are written on a scrap of
+   parchment pinned to the door. html.js page() builds them. */
+.pinned-note {
+  position: relative;
+  padding: 0.9em 0.8em 0.7em;
+  color: var(--ink);
+  text-shadow: none;
+  background: var(--cream);
+  /* A 2px ink outline, then a hard drop shadow: no blur keeps it pixel-y. */
+  box-shadow: 0 0 0 2px var(--ink), 4px 4px 0 2px rgba(0, 0, 0, 0.45);
+  transform: rotate(-1.5deg); /* pinned up in a hurry */
+}
+/* The nail holding the note up: a small square of iron with a glint. */
+.pinned-note::before {
+  content: '';
+  position: absolute;
+  top: 0.3em;
+  left: 50%;
+  width: 0.45em;
+  height: 0.45em;
+  margin-left: -0.22em;
+  background: #24222e;
+  box-shadow: inset 1px 1px 0 #7a7890;
+}
+.pinned-note h2 {
+  margin: 0.2em 0 0.35em;
+  font-size: 1.15em;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--brass-dark);
+}
+.door-form .pinned-note p { margin: 0; font-size: 0.9em; line-height: 1.3; }
+
+/* A link that looks like the brass button, for "Go back", "Log in" etc. */
+.brass-button {
+  display: block;
+  margin-top: 1.1em;
+  padding: 0.5em;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  text-shadow: 1px 1px 0 #f7d27a;
+  background: var(--brass);
+  box-shadow: 0 0 0 2px var(--ink), inset -3px -3px 0 var(--brass-dark), inset 3px 3px 0 #f7d27a;
+}
+.door-form a.brass-button { color: var(--ink); }
+.brass-button:hover { background: #e8b553; }
+.brass-button:active { box-shadow: 0 0 0 2px var(--ink), inset 3px 3px 0 var(--brass-dark); }
+
 /* Keyboard users need to see where they are. A bright, chunky outline. */
 .door-form input:focus-visible,
 .door-form button:focus-visible,
+.door-form a:focus-visible,
 .scene-panel a:focus-visible,
 .scene-panel button:focus-visible {
   outline: 3px solid var(--focus);

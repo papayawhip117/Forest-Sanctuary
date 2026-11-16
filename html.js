@@ -5,9 +5,12 @@
 // could swap these for a real template engine.
 // -----------------------------------------------------------------------------
 
-// The shared outer shell of every page. `body` is HTML that goes inside the
-// card. `wide` gives the card more room (used by the admin table).
-function layout(title, body, { wide = false } = {}) {
+// The plain parchment card on dark green. This is the "back office" look: only
+// the admin pages (routes/admin.js) use it. Everything a visitor or member
+// sees uses the pixel-art door or a scene instead (see below).
+// `body` is HTML that goes inside the card. `wide` gives the card more room
+// (used by the admin tables).
+function adminLayout(title, body, { wide = false } = {}) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -75,14 +78,20 @@ ${body}
 </html>`;
 }
 
-// A tiny page showing a message with a link onward.
+// A tiny page showing a message with a link onward: errors, "wrong password",
+// "account created", the 404 page, and so on.
+// It's drawn on the same overgrown door as the login, with the message on a
+// scrap of parchment pinned to the wood and a brass button to go on.
 // `message` is put in as HTML, so escape anything a user typed before passing
 // it in.
 function page(title, message, linkHref, linkText = 'Go back') {
-  return layout(
+  return doorLayout(
     title,
-    `    <p>${message}</p>
-    <p><a href="${escapeHtml(linkHref)}">${linkText}</a></p>`
+    `      <div class="pinned-note">
+        <h2>${title}</h2>
+        <p>${message}</p>
+      </div>
+      <a class="brass-button" href="${escapeHtml(linkHref)}">${linkText}</a>`
   );
 }
 
@@ -98,4 +107,4 @@ function escapeHtml(text) {
     .replaceAll("'", '&#39;');
 }
 
-module.exports = { layout, doorLayout, sceneLayout, page, escapeHtml };
+module.exports = { adminLayout, doorLayout, sceneLayout, page, escapeHtml };

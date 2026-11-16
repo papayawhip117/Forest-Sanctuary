@@ -10,7 +10,7 @@ const express = require('express');
 const { findUserById } = require('../db');
 const { createInvite, listInvites, INVITE_TTL_DAYS } = require('../invites');
 const { requireLogin } = require('./auth');
-const { layout, escapeHtml } = require('../html');
+const { adminLayout, page, escapeHtml } = require('../html');
 
 const router = express.Router();
 
@@ -28,9 +28,10 @@ async function requireAdmin(req, res, next) {
   if (user && user.is_admin) {
     return next();
   }
-  res.status(403).send(
-    layout('Not allowed', '    <p>Only admins can make invites.</p>\n    <p><a href="/sanctuary">Back to the Sanctuary</a></p>')
-  );
+  // A member can land here by typing the URL, so this answer uses the
+  // pixel-art door like every other page a member sees. Only the admin
+  // pages themselves keep the plain look.
+  res.status(403).send(page('Not allowed', 'Only admins can make invites.', '/sanctuary', 'Back to the Sanctuary'));
 }
 
 // `router.use` applies these two guards to every route in this file, in order.
@@ -102,7 +103,7 @@ ${rows}
     : '    <p>No invites yet.</p>';
 
   res.send(
-    layout(
+    adminLayout(
       'Invites',
       `${newLinkHtml}    <p>Each link lets one person create one account, within ${INVITE_TTL_DAYS} days.</p>
     <form method="post" action="/admin/invites">
@@ -143,7 +144,7 @@ router.get('/admin/connection', (req, res) => {
     .join('\n');
 
   res.send(
-    layout(
+    adminLayout(
       'Connection check',
       `    <p>What the server can tell about your request. On a deployed site,
        "Your IP" should be your real IP address and the protocol should be https.</p>

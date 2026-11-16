@@ -23,6 +23,7 @@ const { db, initDatabase } = require('./db');
 const { SqliteSessionStore, pruneExpiredSessions } = require('./session-store');
 const { router: authRoutes } = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
+const { page } = require('./html');
 
 // NODE_ENV is the usual way to tell a Node app whether it is running on your
 // laptop ("development", the default) or on a real server ("production").
@@ -158,9 +159,26 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(authRoutes);
 app.use(adminRoutes);
 
-// Anything that did not match above ends up here: a simple 404 page.
+// Anything that did not match above ends up here: the 404 page, drawn on
+// the door like every other message.
 app.use((req, res) => {
-  res.status(404).send('Nothing grows here. <a href="/">Go home</a>');
+  res.status(404).send(page('Lost in the woods', 'Nothing grows here. That page does not exist.', '/', 'Back to the door'));
+});
+
+// The error handler. Express knows it's one because it takes FOUR arguments
+// (err first). It runs when a route throws, for example if the database is
+// unreachable. Without it, Express shows its own plain "Internal Server
+// Error" text. We log the real error for ourselves (it can hold details a
+// visitor shouldn't see) and show a friendly page instead.
+app.use((err, req, res, next) => {
+  console.error(err);
+  // If part of the response was already sent we can't start a new page,
+  // so let Express's built-in handler close the connection.
+  if (res.headersSent) return next(err);
+  // Some errors carry their own status, like 400 for a malformed form.
+  // Anything else is our fault: 500.
+  const status = err.status >= 400 && err.status < 500 ? err.status : 500;
+  res.status(status).send(page('Something went wrong', 'The path got tangled. Please try again in a moment.', '/', 'Back to the door'));
 });
 
 // 5. Start the server.
