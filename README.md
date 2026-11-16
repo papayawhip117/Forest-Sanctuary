@@ -31,7 +31,7 @@ Sign-up is invite only, so make the first invite from the command line:
 npm run invite
 ```
 
-It prints a link like `http://localhost:3000/signup?code=c_iNS_hvXIRK...`. Open it, make your account, and log in. Because yours is the first account, it is the **admin**. You land on **The Sanctuary** (`/sanctuary`), a page only logged-in members can see, with a link to **`/admin/invites`**, where you can make invite links for friends with one click. Visit the home page and come back, or restart the server: you are still logged in. The **Log out** button ends the session.
+It prints a link like `http://localhost:3000/signup?code=c_iNS_hvXIRK...`. Open it, make your account, and log in. Because yours is the first account, it is the **admin**. You land on **The Sanctuary** (`/sanctuary`), a page only logged-in members can see, with a link to **`/admin/invites`**, where you can make invite links for friends with one click. Open the front page (`/`) again, or restart the server: you are still logged in, so it sends you straight back into the Sanctuary instead of showing the door. The **Log out** button ends the session.
 
 Already have a database from an earlier step? It keeps working: on start-up the server adds the `is_admin` column if it's missing and makes your oldest account the admin. An older `.env` that sets `DATABASE_PATH` instead of `DATABASE_URL` works too.
 
@@ -79,11 +79,11 @@ any page            ── cookie: forest.sid ──▶  express-session
 | `session-store.js` | Teaches express-session how to read and write the `sessions` table. |
 | `invites.js` | Makes invite codes, checks them, and signs someone up while using up their invite. |
 | `rate-limit.js` | A small middleware that limits how often one IP address can try something. |
-| `routes/auth.js` | The sign-up form (`GET /signup`), `POST /signup`, `POST /login`, `POST /logout`, the `requireLogin` guard, and the members-only `GET /sanctuary` page. |
+| `routes/auth.js` | The front page (`GET /`: the door, or straight to the Sanctuary if you're logged in), the sign-up form (`GET /signup`), `POST /signup`, `POST /login`, `POST /logout`, the `requireLogin` guard, and the members-only `GET /sanctuary` page. |
 | `routes/admin.js` | The admin-only invite page, `/admin/invites`, the `/admin/connection` deployment check, and their `requireAdmin` guard. |
 | `html.js` | Small helpers that build HTML pages, and `escapeHtml`. |
 | `scripts/create-invite.js` | `npm run invite` / `npm run invite:prod`: makes an invite from the command line. |
-| `public/` | Plain HTML and CSS sent straight to the browser: the home page, the login door and the stylesheet. |
+| `public/` | Plain HTML and CSS sent straight to the browser: the login door (also the front page, `/`) and the stylesheet. |
 | `public/art/` | The pixel art, drawn by small JavaScript files: `pixel.js` (shared helpers), `door.js` (login and sign-up) and `sanctuary.js` (the garden). See "The pixel art" below. |
 | `.env.example` | The settings the app expects. Copy it to `.env` (which git ignores). |
 | `render.yaml` | The Render Blueprint: how to build and run the deployed site, and which settings it needs. |
@@ -345,7 +345,7 @@ You don't need to create any tables: the app does that itself the first time it 
    ```
 
    If you see `Could not set up the database` instead, the URL or token is wrong: fix them under the service's **Environment** tab, and Render restarts the app.
-8. **Find your address.** When the status says **Live**, the address is near the top of the service page, something like `https://forest-sanctuary.onrender.com` (Render adds a few random characters if the name is taken). Open it: you should see the home page, served over https.
+8. **Find your address.** When the status says **Live**, the address is near the top of the service page, something like `https://forest-sanctuary.onrender.com` (Render adds a few random characters if the name is taken). Open it: you should see the overgrown door, served over https.
 
 ### Step 3: make the first admin invite
 
