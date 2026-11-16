@@ -3,7 +3,7 @@
 # Instead of clicking every setting into the Render dashboard, this file
 # describes the service as code. In Render choose New > Blueprint, pick this
 # repo, and Render creates everything below. Change this file and push, and
-# Render updates the service to match. (Full walkthrough: README, "Deploying".)
+# Render updates the service to match. (Full walkthrough: docs/LEARNING.md, "Deploying to Render".)
 #
 # Spec: https://render.com/docs/blueprint-spec
 # -----------------------------------------------------------------------------

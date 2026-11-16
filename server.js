@@ -54,7 +54,7 @@ app.use(express.urlencoded({ extended: false }));
 
 // Sessions.
 //
-// How it works, in short (the README has the long version):
+// How it works, in short (docs/LEARNING.md has the long version):
 //   - When someone logs in, the server creates a session: a row in the
 //     `sessions` table holding data like { userId: 1, username: "cody" }.
 //   - The row is filed under a long random id. The server sends ONLY that id
