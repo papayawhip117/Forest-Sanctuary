@@ -1,6 +1,7 @@
 // routes/auth.js
 // -----------------------------------------------------------------------------
-// Sign-up, login, logout, and a page only logged-in users can see.
+// Sign-up (invite only), login, logout, and a page only logged-in users can
+// see.
 //
 // A "router" is a mini Express app holding a group of related routes. server.js
 // plugs it in with `app.use(authRoutes)`.
@@ -12,7 +13,10 @@
 
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createUser, findUserByUsername } = require('../db');
+const { findUserByUsername, findUserById } = require('../db');
+const { isInviteUsable, signUpWithInvite } = require('../invites');
+const rateLimit = require('../rate-limit');
+const { layout, page, escapeHtml } = require('../html');
 
 const router = express.Router();
 
@@ -28,30 +32,94 @@ const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_BYTES = 72;
 
 // -----------------------------------------------------------------------------
-// POST /signup  (the sign-up form in public/signup.html sends its data here)
+// Rate limits (see rate-limit.js)
+// -----------------------------------------------------------------------------
+// Login: 10 tries per 15 minutes from one IP address. Plenty for a person who
+// mistyped, far too few for a script guessing passwords.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: (minutes) =>
+    page('Log in', `Too many login attempts. Please wait ${minutes} minute(s) and try again.`, '/login.html'),
+});
+
+// Sign-up: 10 tries per hour from one IP address.
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: (minutes) =>
+    page('Sign up', `Too many sign-up attempts. Please wait ${minutes} minute(s) and try again.`, '/'),
+});
+
+// -----------------------------------------------------------------------------
+// GET /signup?code=...  (the sign-up form)
+// -----------------------------------------------------------------------------
+// Invite links look like http://localhost:3000/signup?code=AbC123...
+// The part after `?` is the "query string". Express parses it for us into
+// `req.query`, so `req.query.code` is the invite code.
+//
+// This page used to be a static file (public/signup.html). It's built here now
+// because it needs the code from the link, and only the server can check
+// whether that code is any good before showing the form.
+router.get('/signup', (req, res) => {
+  const code = String(req.query.code ?? '');
+
+  if (!isInviteUsable(code)) {
+    return res.status(403).send(
+      layout(
+        'Invite only',
+        `    <p>Forest Sanctuary is invite only. You need a valid invite link to sign up.</p>
+    <p>${code ? 'That invite link is wrong, already used, or expired. Ask for a new one.' : 'Ask a member for an invite link.'}</p>
+    <p>Already have an account? <a href="/login.html">Log in</a></p>`
+      )
+    );
+  }
+
+  res.send(signupForm(code));
+});
+
+// -----------------------------------------------------------------------------
+// POST /signup  (the sign-up form above sends its data here)
 // -----------------------------------------------------------------------------
 // `async` lets us use `await` for bcrypt, which is deliberately slow and runs
 // in the background so the server can keep handling other requests meanwhile.
-router.post('/signup', async (req, res) => {
+//
+// `signupLimiter` runs first and stops the request if this IP is over its limit.
+router.post('/signup', signupLimiter, async (req, res) => {
   // `?? ''` means "use an empty string if the field is missing".
   const username = String(req.body.username ?? '').trim();
   const password = String(req.body.password ?? '');
+  // The form carries the invite code along in a hidden field.
+  const code = String(req.body.code ?? '');
+
+  // Where "Go back" links point, so the person doesn't lose their invite.
+  // encodeURIComponent makes the code safe to put inside a URL.
+  const backToForm = `/signup?code=${encodeURIComponent(code)}`;
+
+  // --- Check the invite first ----------------------------------------------
+  // This is cheap, so do it before the slow password hashing. No valid invite,
+  // no account, whatever else was sent.
+  if (!isInviteUsable(code)) {
+    return res
+      .status(403)
+      .send(page('Sign up', 'That invite is wrong, already used, or expired.', '/'));
+  }
 
   // --- Validate the input ---------------------------------------------------
   if (!USERNAME_PATTERN.test(username)) {
     return res
       .status(400)
-      .send(page('Sign up', 'Usernames are 3 to 30 letters, numbers or underscores.', '/signup.html'));
+      .send(page('Sign up', 'Usernames are 3 to 30 letters, numbers or underscores.', backToForm));
   }
   if (password.length < MIN_PASSWORD_LENGTH) {
     return res
       .status(400)
-      .send(page('Sign up', `Passwords need at least ${MIN_PASSWORD_LENGTH} characters.`, '/signup.html'));
+      .send(page('Sign up', `Passwords need at least ${MIN_PASSWORD_LENGTH} characters.`, backToForm));
   }
   if (Buffer.byteLength(password) > MAX_PASSWORD_BYTES) {
     return res
       .status(400)
-      .send(page('Sign up', 'That password is too long (72 bytes max).', '/signup.html'));
+      .send(page('Sign up', 'That password is too long (72 bytes max).', backToForm));
   }
 
   // --- Hash the password ----------------------------------------------------
@@ -63,9 +131,12 @@ router.post('/signup', async (req, res) => {
   // Hashing is ONE-WAY: there is no way to turn the hash back into the password.
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-  // --- Save the user --------------------------------------------------------
+  // --- Save the user and use up the invite ----------------------------------
+  // signUpWithInvite (in invites.js) does both inside one database
+  // transaction, so they either both happen or neither does.
+  let userId;
   try {
-    createUser(username, passwordHash);
+    userId = signUpWithInvite(code, username, passwordHash);
   } catch (err) {
     // The UNIQUE rule on the username column makes SQLite throw this error
     // when the name is taken. Any other error is unexpected, so re-throw it.
@@ -73,9 +144,17 @@ router.post('/signup', async (req, res) => {
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return res
         .status(409)
-        .send(page('Sign up', 'That username is already taken.', '/signup.html'));
+        .send(page('Sign up', 'That username is already taken.', backToForm));
     }
     throw err;
+  }
+
+  // The invite was checked above, but it could have been used or expired in
+  // the second or so we spent hashing. The transaction checks again.
+  if (!userId) {
+    return res
+      .status(403)
+      .send(page('Sign up', 'That invite is wrong, already used, or expired.', '/'));
   }
 
   res
@@ -86,7 +165,7 @@ router.post('/signup', async (req, res) => {
 // -----------------------------------------------------------------------------
 // POST /login  (the login form in public/login.html sends its data here)
 // -----------------------------------------------------------------------------
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const username = String(req.body.username ?? '').trim();
   const password = String(req.body.password ?? '');
 
@@ -164,26 +243,26 @@ function requireLogin(req, res, next) {
 // in here we know someone is logged in.
 router.get('/sanctuary', requireLogin, (req, res) => {
   const name = escapeHtml(req.session.username);
-  res.send(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>The Sanctuary · Forest Sanctuary</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <main class="card">
-    <h1>The Sanctuary</h1>
-    <p>Welcome in, ${name}. Only logged-in members can see this page.</p>
+
+  // Admins get a link to the invite page. We look the user up in the database
+  // instead of trusting something saved in the session, so if you ever remove
+  // someone's admin flag it takes effect right away.
+  const user = findUserById(req.session.userId);
+  const adminLink = user && user.is_admin
+    ? '    <p>You are an admin: <a href="/admin/invites">create invite links</a>.</p>\n'
+    : '';
+
+  res.send(
+    layout(
+      'The Sanctuary',
+      `    <p>Welcome in, ${name}. Only logged-in members can see this page.</p>
     <p>Try opening <a href="/">the home page</a> and coming back: you stay logged in,
        because your browser sends its session cookie with every request.</p>
-    <form method="post" action="/logout">
+${adminLink}    <form method="post" action="/logout">
       <button type="submit">Log out</button>
-    </form>
-  </main>
-</body>
-</html>`);
+    </form>`
+    )
+  );
 });
 
 // -----------------------------------------------------------------------------
@@ -198,37 +277,39 @@ function regenerateSession(req) {
   });
 }
 
-// Builds a tiny HTML page to show a message with a link onward. Later steps
-// can swap this for proper templates.
-function page(title, message, linkHref, linkText = 'Go back') {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${title} · Forest Sanctuary</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <main class="card">
-    <h1>${title}</h1>
-    <p>${message}</p>
-    <p><a href="${linkHref}">${linkText}</a></p>
-  </main>
-</body>
-</html>`;
+// The sign-up form. The invite code rides along in a hidden <input>, so it is
+// sent with the username and password when the form is submitted.
+function signupForm(code) {
+  return layout(
+    'Sign up',
+    `    <p>You've been invited. Pick a username and password.</p>
+
+    <!--
+      method="post" sends the fields in the request body (not the URL, where
+      they would show up in browser history and server logs).
+      action="/signup" is the POST route above.
+      Each input's \`name\` becomes a key in req.body on the server.
+    -->
+    <form method="post" action="/signup">
+      <input type="hidden" name="code" value="${escapeHtml(code)}">
+
+      <label for="username">Username</label>
+      <!-- These checks (required, pattern, minlength) are just for convenience.
+           The server checks again, because anyone can skip the browser. -->
+      <input id="username" name="username" required
+             pattern="[A-Za-z0-9_]{3,30}" autocomplete="username"
+             title="3 to 30 letters, numbers or underscores">
+
+      <label for="password">Password</label>
+      <!-- autocomplete="new-password" tells password managers to suggest one. -->
+      <input id="password" name="password" type="password" required
+             minlength="8" maxlength="72" autocomplete="new-password">
+
+      <button type="submit">Create account</button>
+    </form>
+
+    <p>Already have an account? <a href="/login.html">Log in</a></p>`
+  );
 }
 
-// Anything a user typed must be "escaped" before we put it into HTML.
-// Otherwise someone could sign up as `<script>...</script>` and that script
-// would run in other people's browsers (an attack called XSS).
-function escapeHtml(text) {
-  return String(text)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-module.exports = router;
+module.exports = { router, requireLogin };

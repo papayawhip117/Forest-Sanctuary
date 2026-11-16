@@ -4,8 +4,8 @@ Aesthetic forest themed login page+project for learning authentication, database
 ## Roadmap
 
 1. Sign-up and login with hashed passwords
-2. **Sessions and cookies, so the server remembers who is logged in** ← you are here
-3. Invite codes, so only invited people can sign up
+2. Sessions and cookies, so the server remembers who is logged in
+3. **Invite codes, so only invited people can sign up** ← you are here
 4. Deployment, so it runs on the internet
 5. The forest look and feel
 
@@ -25,7 +25,15 @@ Open `.env` and set `SESSION_SECRET` to a long random string. This prints one fo
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-Then open http://localhost:3000, make an account, and log in. You land on **The Sanctuary** (`/sanctuary`), a page only logged-in members can see. Visit the home page and come back, or restart the server: you are still logged in. The **Log out** button ends the session.
+Sign-up is invite only, so make the first invite from the command line:
+
+```bash
+npm run invite
+```
+
+It prints a link like `http://localhost:3000/signup?code=c_iNS_hvXIRK...`. Open it, make your account, and log in. Because yours is the first account, it is the **admin**. You land on **The Sanctuary** (`/sanctuary`), a page only logged-in members can see, with a link to **`/admin/invites`**, where you can make invite links for friends with one click. Visit the home page and come back, or restart the server: you are still logged in. The **Log out** button ends the session.
+
+Already have a database from step 1 or 2? It keeps working: on start-up the server adds the new `is_admin` column and makes your oldest account the admin.
 
 To look inside the database while you learn, the [SQLite CLI](https://sqlite.org/cli.html) works well:
 
@@ -37,6 +45,7 @@ You will see each password stored as a long `$2b$12$...` string, never the real 
 
 ```bash
 sqlite3 data/forest.db "SELECT * FROM sessions;"
+sqlite3 data/forest.db "SELECT * FROM invites;"
 ```
 
 To start over, stop the server and delete the `data/` folder.
@@ -46,11 +55,13 @@ To start over, stop the server and delete the `data/` folder.
 ```
 Browser                         Server (Node + Express)                 Disk
 ───────                         ───────────────────────                 ────
-public/signup.html  ──POST /signup──▶  routes/auth.js
+/signup?code=...    ──POST /signup──▶  rate limit (rate-limit.js)
+                                        ├─ check invite code ◀───────  invites table
                                         ├─ validate input
                                         ├─ bcrypt.hash(password)
-                                        └─ db.createUser() ──────────▶  data/forest.db
-public/login.html   ──POST /login───▶  routes/auth.js
+                                        └─ create user + use up invite ▶  data/forest.db
+                                           (one transaction)
+public/login.html   ──POST /login───▶  rate limit (rate-limit.js)
                                         ├─ db.findUserByUsername() ◀──  data/forest.db
                                         ├─ bcrypt.compare(password, hash)
                                         └─ start a session ──────────▶  sessions table
@@ -64,10 +75,15 @@ any page            ── cookie: forest.sid ──▶  express-session
 | File | What it does |
 | --- | --- |
 | `server.js` | Starting point. Loads `.env`, creates the Express app, plugs in middleware and routes, and starts listening. |
-| `db.js` | Opens the SQLite database, creates the `users` table, and exposes `createUser` and `findUserByUsername`. |
+| `db.js` | Opens the SQLite database, creates the `users` table (adding `is_admin` to older databases), and exposes `createUser`, `findUserByUsername` and `findUserById`. |
 | `session-store.js` | Creates the `sessions` table and teaches express-session how to read and write it. |
-| `routes/auth.js` | `POST /signup`, `POST /login`, `POST /logout`, the `requireLogin` guard, and the members-only `GET /sanctuary` page. |
-| `public/` | Plain HTML and CSS sent straight to the browser: the home page and the two forms. |
+| `invites.js` | Creates the `invites` table. Makes codes, checks them, and signs someone up while using up their invite. |
+| `rate-limit.js` | A small middleware that limits how often one IP address can try something. |
+| `routes/auth.js` | The sign-up form (`GET /signup`), `POST /signup`, `POST /login`, `POST /logout`, the `requireLogin` guard, and the members-only `GET /sanctuary` page. |
+| `routes/admin.js` | The admin-only invite page, `/admin/invites`, and its `requireAdmin` guard. |
+| `html.js` | Small helpers that build HTML pages, and `escapeHtml`. |
+| `scripts/create-invite.js` | `npm run invite`: makes an invite from the command line. |
+| `public/` | Plain HTML and CSS sent straight to the browser: the home page and the login form. |
 | `.env.example` | The settings the app expects. Copy it to `.env` (which git ignores). |
 
 ### Express
@@ -184,6 +200,63 @@ The part of the cookie after the `.` is a **signature** made from the id and `SE
 
 express-session only needs a *store* with four methods: `get`, `set`, `destroy` and `touch`. Its default store keeps sessions in memory, so every restart would log everyone out. `session-store.js` implements those four methods on a SQLite table in about 60 lines, and sweeps out expired rows every 15 minutes.
 
+## Invite codes
+
+Sign-up only works with an invite link like `/signup?code=c_iNS_hvXIRKN359Is-IeyuArzevpYYP-USMlpgyqd0`. Each code works **once**, for **7 days** (`INVITE_TTL_DAYS` in `.env`).
+
+### Making a code
+
+`createInvite()` in `invites.js` asks the operating system for 32 random bytes with `crypto.randomBytes`, and writes them as 43 URL-safe characters. 32 bytes is 256 bits: there are more possible codes than atoms in the universe, so nobody will ever guess one. (`Math.random()` is never used for this: it is predictable.)
+
+### Storing a hash, not the code
+
+The `invites` table stores a **SHA-256 hash** of each code, never the code itself, the same idea as passwords:
+
+```
+invites
+id  code_hash          created_by  created_at           expires_at           used_by  used_at
+1   9f2c1e...(64 hex)  NULL        2026-11-16 19:38:38  2026-11-23 19:38:38  1        2026-11-16 19:39:02
+2   41ab07...          1           2026-11-16 19:40:11  2026-11-23 19:40:11  NULL     NULL
+```
+
+When someone signs up, we hash the code they bring and look for a row with that hash. If someone copied the database file, the hashes would be useless to them.
+
+Why SHA-256 and not bcrypt? bcrypt is slow on purpose because *people* pick short, guessable passwords. These codes are long and random, so a fast hash is already safe. And bcrypt salts each hash randomly, so the same code would hash differently every time and we couldn't look it up with `WHERE code_hash = ?`.
+
+The downside: the server can't show you an old link again, because it never kept it. The admin page shows each new link **once**, like an API token on GitHub.
+
+### Using a code exactly once: transactions
+
+A sign-up has to do two things: create the user, and mark the invite as used by them. If only one happened, we'd have either an account with a still-valid invite (reusable!) or a used-up invite with no account. So `signUpWithInvite()` wraps both in a **transaction** with `db.transaction()`: either everything inside it happens, or, if anything throws (like the username being taken), SQLite undoes all of it. That's also why trying a taken username doesn't burn your invite.
+
+The "mark as used" query is `UPDATE invites SET used_by = ? WHERE id = ? AND used_by IS NULL`. If the invite was somehow used a moment earlier, it changes 0 rows, the code throws, and the transaction rolls back.
+
+### Who can make invites: admins
+
+There's a chicken-and-egg problem: you need an invite to make an account, and an account to make invites. Two pieces solve it:
+
+1. **`npm run invite`** makes an invite straight from the command line. Anyone who can run commands on the server could open the database anyway, so that's trusted.
+2. **The first account becomes the admin** (`is_admin = 1` in `users`). Admins see a link on the Sanctuary to `/admin/invites`, which has a **Create invite link** button and a table of every invite: waiting, used (and by whom), or expired.
+
+The admin page is guarded by two middlewares in a row: `requireLogin` ("who are you?", called *authentication*) and then `requireAdmin` ("are you allowed?", called *authorization*). The admin check reads `is_admin` from the database on each request rather than saving it in the session, so taking someone's admin away works immediately.
+
+### Two more patterns on the admin page
+
+- **Post/Redirect/Get.** Clicking the button POSTs to `/admin/invites`, which makes the invite and *redirects* to the GET page. If it showed the link directly, refreshing would resubmit the form and silently make another invite.
+- **Flash messages.** So how does the GET page know the new link? The POST puts it in `req.session.newInviteLink`, and the GET page shows it and deletes it straight away. A one-time message carried in the session like this is called a *flash*.
+
+## Rate limiting
+
+`rate-limit.js` limits how many times one IP address can try to **log in (10 per 15 minutes)** and **sign up (10 per hour)**. Past that, the server answers `429 Too Many Requests` with a `Retry-After` header saying how many seconds to wait.
+
+It counts with a "fixed window": for each IP it remembers a count and when the window started, and starts over when the window ends. This slows down anyone running a script to guess passwords. bcrypt already makes each guess slow and invite codes can't be guessed, but this is a cheap extra layer, and it stops one visitor keeping the server busy hashing passwords.
+
+Things to know:
+
+- The counts live in memory, so restarting the server resets them. (Handy if you lock yourself out while testing!)
+- Once deployed behind a proxy, `trust proxy` in `server.js` is what makes `req.ip` the visitor's real address rather than the proxy's.
+- Real projects usually use the [`express-rate-limit`](https://www.npmjs.com/package/express-rate-limit) package, and a shared store like Redis when there's more than one server. Ours is the same idea in about 40 lines.
+
 ## What's missing (on purpose)
 
-Anyone can still sign up. Limiting sign-up to people with an **invite code** is step 3.
+It only runs on your laptop. Putting it on the internet is step 4, **deployment**.

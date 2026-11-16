@@ -56,3 +56,20 @@ button {
 }
 
 a { color: var(--accent); }
+
+/* The admin invite page needs more room for its table. */
+.card.wide { max-width: 640px; }
+
+/* The "copy this link" box on the admin page. */
+.notice {
+  padding: 12px;
+  margin-bottom: 16px;
+  background: #e3ecdf;
+  border-radius: 8px;
+}
+.notice p { margin-top: 0; }
+input.copy { width: 100%; font-family: ui-monospace, monospace; font-size: 0.85em; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.9em; }
+th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid #d6d0c0; }

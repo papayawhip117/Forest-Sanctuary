@@ -20,7 +20,8 @@ const path = require('node:path');
 const express = require('express');
 const session = require('express-session');
 const SqliteSessionStore = require('./session-store');
-const authRoutes = require('./routes/auth');
+const { router: authRoutes } = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
 
 // NODE_ENV is the usual way to tell a Node app whether it is running on your
 // laptop ("development", the default) or on a real server ("production").
@@ -63,6 +64,10 @@ app.use(express.urlencoded({ extended: false }));
 // In production our app will sit behind a proxy that handles HTTPS. This line
 // tells Express to trust it, so it knows the request really was HTTPS and is
 // willing to send a `secure` cookie (see below).
+//
+// It also matters for rate limiting (rate-limit.js), which counts attempts per
+// IP address: behind a proxy, every request seems to come from the proxy's
+// IP. Trusting the proxy makes `req.ip` the visitor's real address instead.
 if (isProduction) {
   app.set('trust proxy', 1);
 }
@@ -122,9 +127,10 @@ app.use(
 // Visiting "/" serves public/index.html automatically.
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 4. Routes. Sign-up, login, logout and the members-only page all live in
-//    routes/auth.js.
+// 4. Routes. Sign-up, login, logout and the members-only page live in
+//    routes/auth.js. The admin's invite page lives in routes/admin.js.
 app.use(authRoutes);
+app.use(adminRoutes);
 
 // Anything that did not match above ends up here: a simple 404 page.
 app.use((req, res) => {
