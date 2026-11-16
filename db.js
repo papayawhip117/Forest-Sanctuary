@@ -34,6 +34,8 @@ db.pragma('journal_mode = WAL');
 //   username       UNIQUE means the database itself refuses duplicates.
 //                  COLLATE NOCASE makes "Cody" and "cody" count as the same.
 //   password_hash  the bcrypt hash. We NEVER store the real password.
+//   is_admin       1 for admins (who can create invites), 0 for everyone else.
+//                  SQLite has no true/false type, so 0 and 1 stand in for it.
 //   created_at     filled in automatically with the current time.
 // -----------------------------------------------------------------------------
 db.exec(`
@@ -41,9 +43,28 @@ db.exec(`
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     username      TEXT    NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT    NOT NULL,
+    is_admin      INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
   )
 `);
+
+// -----------------------------------------------------------------------------
+// A tiny "migration".
+//
+// If you ran step 1 or 2 already, your data/forest.db has a users table
+// WITHOUT the is_admin column, and `CREATE TABLE IF NOT EXISTS` above won't
+// change an existing table. So we ask SQLite which columns the table has
+// (PRAGMA table_info) and add the missing one. Real projects use a migration
+// tool for this, but underneath it's the same idea: change an existing
+// database step by step, without losing the data in it.
+// -----------------------------------------------------------------------------
+const userColumns = db.prepare('PRAGMA table_info(users)').all().map((col) => col.name);
+if (!userColumns.includes('is_admin')) {
+  db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+  // Whoever signed up first in the old database becomes the admin, so you
+  // don't lock yourself out of the new invite page.
+  db.exec('UPDATE users SET is_admin = 1 WHERE id = (SELECT MIN(id) FROM users)');
+}
 
 // -----------------------------------------------------------------------------
 // Prepared statements.
@@ -55,16 +76,25 @@ db.exec(`
 // together with user input!
 // -----------------------------------------------------------------------------
 const insertUser = db.prepare(
-  'INSERT INTO users (username, password_hash) VALUES (?, ?)'
+  'INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)'
 );
+const countUsers = db.prepare('SELECT COUNT(*) AS count FROM users');
 const selectUserByName = db.prepare(
-  'SELECT id, username, password_hash FROM users WHERE username = ?'
+  'SELECT id, username, password_hash, is_admin FROM users WHERE username = ?'
+);
+const selectUserById = db.prepare(
+  'SELECT id, username, is_admin FROM users WHERE id = ?'
 );
 
 // Small helper functions so the rest of the app never writes SQL directly.
 function createUser(username, passwordHash) {
+  // The very first account becomes the admin. That's you: you create the
+  // first invite from the command line (see scripts/create-invite.js), use it
+  // yourself, and from then on you can make invites in the browser.
+  const isAdmin = countUsers.get().count === 0 ? 1 : 0;
+
   // .run() is for statements that change data. It tells us the new row's id.
-  const result = insertUser.run(username, passwordHash);
+  const result = insertUser.run(username, passwordHash, isAdmin);
   return result.lastInsertRowid;
 }
 
@@ -73,4 +103,8 @@ function findUserByUsername(username) {
   return selectUserByName.get(username);
 }
 
-module.exports = { db, createUser, findUserByUsername };
+function findUserById(id) {
+  return selectUserById.get(id);
+}
+
+module.exports = { db, createUser, findUserByUsername, findUserById };
