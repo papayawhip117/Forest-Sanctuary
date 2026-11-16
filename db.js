@@ -28,7 +28,7 @@ const path = require('node:path');
 const { createClient } = require('@libsql/client');
 
 // Where the database is. From .env locally, from the host's settings in
-// production (see .env.example and the README's "Deploying" section).
+// production (see .env.example and docs/LEARNING.md, "Deploying to Render").
 //   file:./data/forest.db                        a local file (the default)
 //   libsql://forest-sanctuary-you.turso.io       a Turso database
 //
