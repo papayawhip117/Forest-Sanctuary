@@ -17,7 +17,7 @@ const bcrypt = require('bcrypt');
 const { findUserByUsername, findUserById } = require('../db');
 const { isInviteUsable, signUpWithInvite } = require('../invites');
 const rateLimit = require('../rate-limit');
-const { layout, doorLayout, sceneLayout, page, escapeHtml } = require('../html');
+const { doorLayout, sceneLayout, page, escapeHtml } = require('../html');
 
 const router = express.Router();
 
@@ -41,7 +41,7 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: (minutes) =>
-    page('Log in', `Too many login attempts. Please wait ${minutes} minute(s) and try again.`, '/login.html'),
+    page('Too many knocks', `Too many login attempts. Please wait ${minutes} minute(s) and try again.`, '/login.html'),
 });
 
 // Sign-up: 10 tries per hour from one IP address.
@@ -49,7 +49,7 @@ const signupLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 10,
   message: (minutes) =>
-    page('Sign up', `Too many sign-up attempts. Please wait ${minutes} minute(s) and try again.`, '/'),
+    page('Too many knocks', `Too many sign-up attempts. Please wait ${minutes} minute(s) and try again.`, '/'),
 });
 
 // -----------------------------------------------------------------------------
@@ -82,14 +82,10 @@ router.get('/signup', async (req, res) => {
   const code = String(req.query.code ?? '');
 
   if (!(await isInviteUsable(code))) {
-    return res.status(403).send(
-      layout(
-        'Invite only',
-        `    <p>Forest Sanctuary is invite only. You need a valid invite link to sign up.</p>
-    <p>${code ? 'That invite link is wrong, already used, or expired. Ask for a new one.' : 'Ask a member for an invite link.'}</p>
-    <p>Already have an account? <a href="/login.html">Log in</a></p>`
-      )
-    );
+    const why = code
+      ? 'That invite link is wrong, already used, or expired. Ask for a new one.'
+      : 'You need an invite link from a member to sign up.';
+    return res.status(403).send(page('Invite only', why, '/', 'I have an account'));
   }
 
   res.send(signupForm(code));
@@ -119,24 +115,24 @@ router.post('/signup', signupLimiter, async (req, res) => {
   if (!(await isInviteUsable(code))) {
     return res
       .status(403)
-      .send(page('Sign up', 'That invite is wrong, already used, or expired.', '/'));
+      .send(page('Invite only', 'That invite is wrong, already used, or expired.', '/'));
   }
 
   // --- Validate the input ---------------------------------------------------
   if (!USERNAME_PATTERN.test(username)) {
     return res
       .status(400)
-      .send(page('Sign up', 'Usernames are 3 to 30 letters, numbers or underscores.', backToForm));
+      .send(page('Not quite', 'Usernames are 3 to 30 letters, numbers or underscores.', backToForm));
   }
   if (password.length < MIN_PASSWORD_LENGTH) {
     return res
       .status(400)
-      .send(page('Sign up', `Passwords need at least ${MIN_PASSWORD_LENGTH} characters.`, backToForm));
+      .send(page('Not quite', `Passwords need at least ${MIN_PASSWORD_LENGTH} characters.`, backToForm));
   }
   if (Buffer.byteLength(password) > MAX_PASSWORD_BYTES) {
     return res
       .status(400)
-      .send(page('Sign up', 'That password is too long (72 bytes max).', backToForm));
+      .send(page('Not quite', 'That password is too long (72 bytes max).', backToForm));
   }
 
   // --- Hash the password ----------------------------------------------------
@@ -166,7 +162,7 @@ router.post('/signup', signupLimiter, async (req, res) => {
     if (isDuplicate) {
       return res
         .status(409)
-        .send(page('Sign up', 'That username is already taken.', backToForm));
+        .send(page('Name taken', 'That username is already taken.', backToForm));
     }
     throw err;
   }
@@ -176,7 +172,7 @@ router.post('/signup', signupLimiter, async (req, res) => {
   if (!userId) {
     return res
       .status(403)
-      .send(page('Sign up', 'That invite is wrong, already used, or expired.', '/'));
+      .send(page('Invite only', 'That invite is wrong, already used, or expired.', '/'));
   }
 
   res
@@ -205,7 +201,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   if (!passwordMatches) {
     return res
       .status(401)
-      .send(page('Log in', 'Wrong username or password.', '/login.html', 'Try again'));
+      .send(page('Not quite', 'Wrong username or password.', '/login.html', 'Try again'));
   }
 
   // --- Start a session -----------------------------------------------------
