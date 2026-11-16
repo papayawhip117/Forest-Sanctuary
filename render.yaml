@@ -1,0 +1,49 @@
+# render.yaml: a Render "Blueprint".
+# -----------------------------------------------------------------------------
+# Instead of clicking every setting into the Render dashboard, this file
+# describes the service as code. In Render choose New > Blueprint, pick this
+# repo, and Render creates everything below. Change this file and push, and
+# Render updates the service to match. (Full walkthrough: README, "Deploying".)
+#
+# Spec: https://render.com/docs/blueprint-spec
+# -----------------------------------------------------------------------------
+services:
+  - type: web
+    name: forest-sanctuary
+    runtime: node
+
+    # Render's free plan: $0, no disk. It goes to sleep after 15 minutes
+    # with no visitors and takes about a minute to wake up. Nothing is lost
+    # when it sleeps, because the data lives in Turso, not on this server.
+    plan: free
+
+    # `npm ci` installs exactly what package-lock.json lists. --omit=dev
+    # skips nodemon, which only matters on your laptop.
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+
+    # Render calls this URL to check the app is alive (see server.js).
+    healthCheckPath: /healthz
+
+    envVars:
+      # Turns on secure cookies, trust proxy and the SESSION_SECRET check.
+      - key: NODE_ENV
+        value: production
+
+      # Render makes a random secret once and keeps it. You never need to
+      # see it. (Changing it later logs everyone out.)
+      - key: SESSION_SECRET
+        generateValue: true
+
+      # How many proxies sit in front of the app. Check /admin/connection
+      # after deploying, and change this here if your IP is wrong.
+      - key: TRUST_PROXY
+        value: "1"
+
+      # Your Turso database. `sync: false` means these are NOT written in
+      # this file (it's public on GitHub!). Render asks you to paste them in
+      # when you create the Blueprint.
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_AUTH_TOKEN
+        sync: false
