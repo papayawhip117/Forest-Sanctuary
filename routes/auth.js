@@ -1,14 +1,13 @@
 // routes/auth.js
 // -----------------------------------------------------------------------------
-// Sign-up and login.
+// Sign-up, login, logout, and a page only logged-in users can see.
 //
 // A "router" is a mini Express app holding a group of related routes. server.js
 // plugs it in with `app.use(authRoutes)`.
 //
-// Note: right now login only CHECKS your password and shows a message. The
-// server forgets you immediately afterwards. Remembering who is logged in
-// between requests is what sessions and cookies are for, which is the next
-// step of the project.
+// Logging in puts your user id into `req.session`. The session middleware in
+// server.js saves that to the database and gives your browser a cookie, so on
+// every later request `req.session.userId` tells us who you are.
 // -----------------------------------------------------------------------------
 
 const express = require('express');
@@ -108,12 +107,96 @@ router.post('/login', async (req, res) => {
       .send(page('Log in', 'Wrong username or password.', '/login.html', 'Try again'));
   }
 
-  res.send(page('Welcome back', `Hello, ${escapeHtml(user.username)}. Your password checked out.`, '/', 'Home'));
+  // --- Start a session -----------------------------------------------------
+  // regenerate() throws away any session the browser already had and creates
+  // a brand new one with a fresh random id. This prevents "session fixation":
+  // an attack where someone plants a session id they know in your browser,
+  // waits for you to log in, and then uses that same id as you.
+  await regenerateSession(req);
+
+  // Whatever we put on req.session gets saved in the sessions table. Store as
+  // little as possible: the id to find the user, and the name for greetings.
+  req.session.userId = user.id;
+  req.session.username = user.username;
+
+  // Redirect instead of sending a page. The browser makes a fresh GET request
+  // for /sanctuary, carrying its new cookie. (Redirecting after a POST also
+  // means refreshing the page won't resubmit the login form.)
+  res.redirect('/sanctuary');
+});
+
+// -----------------------------------------------------------------------------
+// POST /logout
+// -----------------------------------------------------------------------------
+// Logout is a POST (a form with a button), not a plain link. Browsers and
+// link previewers sometimes load links in advance, and you don't want that to
+// log people out. Also, our sameSite cookie setting means other websites can't
+// trigger this POST on your behalf.
+router.post('/logout', (req, res, next) => {
+  // destroy() deletes the session row from the database. Even if someone had
+  // copied the old cookie, the id now points at nothing.
+  req.session.destroy((err) => {
+    if (err) return next(err);
+    // Tell the browser to delete its copy of the cookie too. The name must
+    // match the `name` option in server.js.
+    res.clearCookie('forest.sid');
+    res.redirect('/');
+  });
+});
+
+// -----------------------------------------------------------------------------
+// requireLogin: a small middleware that guards pages.
+// -----------------------------------------------------------------------------
+// Middleware is any function shaped (req, res, next). Calling next() means
+// "carry on to the next handler". Not calling it means we answer the request
+// ourselves, here with a redirect to the login page.
+function requireLogin(req, res, next) {
+  if (req.session.userId) {
+    return next();
+  }
+  res.redirect('/login.html');
+}
+
+// -----------------------------------------------------------------------------
+// GET /sanctuary  (members only)
+// -----------------------------------------------------------------------------
+// requireLogin runs first. Only if it calls next() does this handler run, so
+// in here we know someone is logged in.
+router.get('/sanctuary', requireLogin, (req, res) => {
+  const name = escapeHtml(req.session.username);
+  res.send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Sanctuary · Forest Sanctuary</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="card">
+    <h1>The Sanctuary</h1>
+    <p>Welcome in, ${name}. Only logged-in members can see this page.</p>
+    <p>Try opening <a href="/">the home page</a> and coming back: you stay logged in,
+       because your browser sends its session cookie with every request.</p>
+    <form method="post" action="/logout">
+      <button type="submit">Log out</button>
+    </form>
+  </main>
+</body>
+</html>`);
 });
 
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
+
+// express-session's regenerate() uses an old-style callback. Wrapping it in a
+// Promise lets us `await` it, and if it fails, Express 5 shows the error page.
+function regenerateSession(req) {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => (err ? reject(err) : resolve()));
+  });
+}
 
 // Builds a tiny HTML page to show a message with a link onward. Later steps
 // can swap this for proper templates.
