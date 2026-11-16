@@ -12,9 +12,9 @@
 
 ## what's inside ✧
 
-- **the door** — log in on an ivy-covered wooden door, with fireflies drifting past
+- **the door** — log in 
 - **invite-only sign-up** — no invite link, no key. each link works once and expires in 7 days
-- **the sanctuary** — a members-only night garden with a glowing well, a cottage and a sleeping bunny
+- **the sanctuary** — a members-only night garden 
 - **admin invites** — the first account is the admin and can make invite links for friends
 - **all pixel art drawn by code** — no image files, just tiny canvases scaled up crisp
 
@@ -78,7 +78,7 @@ each step was its own pull request:
 2. sessions + cookies, so the site remembers you
 3. invite codes, admins + rate limiting
 4. deployment on free hosting
-5. the pixel-art forest look
+5. front end embellishments
 
 the long explanations (how cookies really work, why passwords are hashed, transactions, proxies, how the art is drawn) live in **[docs/LEARNING.md](docs/LEARNING.md)** ✧
 
