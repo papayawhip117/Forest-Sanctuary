@@ -19,6 +19,7 @@ require('dotenv').config();
 const path = require('node:path');
 const express = require('express');
 const session = require('express-session');
+const { db } = require('./db');
 const SqliteSessionStore = require('./session-store');
 const { router: authRoutes } = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
@@ -68,8 +69,19 @@ app.use(express.urlencoded({ extended: false }));
 // It also matters for rate limiting (rate-limit.js), which counts attempts per
 // IP address: behind a proxy, every request seems to come from the proxy's
 // IP. Trusting the proxy makes `req.ip` the visitor's real address instead.
+// How many proxies to trust is a setting, not a guess baked into the code:
+// TRUST_PROXY=1 means "exactly one proxy sits in front of us, believe what
+// it says and nothing further back". Hosts differ (some chain a CDN and a
+// load balancer), so after deploying, check /admin/connection: it shows the
+// IP address the server thinks you have. If it isn't yours, adjust this.
+//
+// Why not just trust everything (`true`)? The X-Forwarded-For header that
+// proxies use to pass the visitor's IP along can also be typed in by the
+// visitor. Trusting too many hops lets someone pick a fake IP for every
+// request and dodge the rate limiter.
 if (isProduction) {
-  app.set('trust proxy', 1);
+  const hops = Number(process.env.TRUST_PROXY ?? 1);
+  app.set('trust proxy', Number.isInteger(hops) && hops >= 0 ? hops : 1);
 }
 
 app.use(
@@ -122,6 +134,20 @@ app.use(
   })
 );
 
+// A "health check": the host calls this URL every few seconds to ask "are
+// you alive?". If it stops answering, the host restarts the app, and during
+// a deploy the host waits for it before sending visitors to the new version.
+// We run a tiny query so "ok" also means the database file is readable.
+app.get('/healthz', (req, res) => {
+  try {
+    db.prepare('SELECT 1').get();
+    res.type('text').send('ok');
+  } catch (err) {
+    console.error('Health check failed:', err);
+    res.status(503).type('text').send('database unavailable');
+  }
+});
+
 // Serve every file in /public as-is. So public/login.html is reachable at
 // http://localhost:3000/login.html and public/styles.css at /styles.css.
 // Visiting "/" serves public/index.html automatically.
@@ -138,7 +164,29 @@ app.use((req, res) => {
 });
 
 // 5. Start the server.
+//    Hosts like Render pick the port for you and pass it in as PORT, so we
+//    must use it rather than hard-coding 3000.
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Forest Sanctuary is listening on http://localhost:${port}`);
+const server = app.listen(port, () => {
+  console.log(`Forest Sanctuary is listening on port ${port} (${isProduction ? 'production' : 'development'})`);
 });
+
+// 6. Shut down politely.
+//
+// When you deploy a new version, the host sends the old one a SIGTERM signal
+// ("please stop"). Instead of dying mid-request, we stop accepting new
+// connections, let the current requests finish, then close the database so
+// SQLite writes everything from its WAL file into the main database file.
+// Ctrl+C on your laptop sends SIGINT, which we handle the same way.
+function shutdown(signal) {
+  console.log(`${signal} received, shutting down...`);
+  server.close(() => {
+    db.close();
+    process.exit(0);
+  });
+  // If something hangs (say, a browser holding a connection open), give up
+  // after 10 seconds rather than waiting forever.
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

@@ -109,7 +109,50 @@ ${rows}
       <button type="submit">Create invite link</button>
     </form>
 ${tableHtml}
-    <p><a href="/sanctuary">Back to the Sanctuary</a></p>`,
+    <p><a href="/admin/connection">Connection check</a> · <a href="/sanctuary">Back to the Sanctuary</a></p>`,
+      { wide: true }
+    )
+  );
+});
+
+// -----------------------------------------------------------------------------
+// GET /admin/connection  (a page for checking the deployment)
+// -----------------------------------------------------------------------------
+// Behind a host's proxy, the app only learns your IP address and whether you
+// used HTTPS from headers the proxy adds. This page shows what the server
+// concluded, so you can check the TRUST_PROXY setting (see server.js):
+//
+//   - "Your IP" should be your real public IP (search "what is my IP").
+//     If it's some other address, every visitor looks the same to the rate
+//     limiter, and one person's typos could lock everyone out.
+//   - "Protocol" should be https. If it says http, secure cookies won't be
+//     sent and logins won't stick.
+//
+// It's admin-only because the raw headers are nobody else's business.
+router.get('/admin/connection', (req, res) => {
+  const forwardedFor = req.get('x-forwarded-for') || '(none)';
+  const rows = [
+    ['Your IP (req.ip)', req.ip],
+    ['Proxy chain (req.ips)', req.ips.length ? req.ips.join(', ') : '(proxy not trusted)'],
+    ['Raw X-Forwarded-For header', forwardedFor],
+    ['Protocol (req.protocol)', req.protocol],
+    ['trust proxy setting', String(req.app.get('trust proxy'))],
+    ['NODE_ENV', process.env.NODE_ENV || '(not set)'],
+  ]
+    .map(([label, value]) => `        <tr><th>${label}</th><td>${escapeHtml(String(value))}</td></tr>`)
+    .join('\n');
+
+  res.send(
+    layout(
+      'Connection check',
+      `    <p>What the server can tell about your request. On a deployed site,
+       "Your IP" should be your real IP address and the protocol should be https.</p>
+    <div class="table-wrap"><table>
+      <tbody>
+${rows}
+      </tbody>
+    </table></div>
+    <p><a href="/admin/invites">Back to invites</a></p>`,
       { wide: true }
     )
   );

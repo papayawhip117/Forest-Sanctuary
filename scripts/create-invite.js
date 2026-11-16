@@ -16,9 +16,15 @@ require('dotenv').config();
 const { createInvite, INVITE_TTL_DAYS } = require('../invites');
 
 // The server doesn't run here, so we can't ask a request for its address.
-// Use APP_URL from .env if it's set (handy once the site is deployed),
-// otherwise assume the local dev server.
-const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+// In order, we use:
+//   1. APP_URL, if you set it (say, for a custom domain)
+//   2. RENDER_EXTERNAL_URL, which Render sets by itself to the site's
+//      https://<name>.onrender.com address
+//   3. the local dev server
+const baseUrl =
+  process.env.APP_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  `http://localhost:${process.env.PORT || 3000}`;
 
 const code = createInvite();
 
